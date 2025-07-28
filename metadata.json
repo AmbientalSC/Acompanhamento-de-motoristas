@@ -1,0 +1,5 @@
+{
+  "name": "Driver Performance Tracker",
+  "description": "An application for instructors to evaluate and track the performance of garbage collection drivers, featuring detailed evaluation forms and performance dashboards with charts.",
+  "requestFramePermissions": []
+}
