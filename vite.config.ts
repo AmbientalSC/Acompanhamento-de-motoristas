@@ -13,6 +13,16 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      }
+      },
+      build: {
+        rollupOptions: {
+          input: {
+            main: path.resolve(__dirname, 'index.html'),
+          },
+        },
+        assetsDir: 'assets',
+        outDir: 'dist',
+      },
+      publicDir: 'public',
     };
 });
