@@ -157,7 +157,7 @@ const App: React.FC = () => {
       </main>
 
        <footer className="text-center py-4 mt-8 text-gray-500 text-xs sm:text-sm">
-        <p>&copy; {new Date().getFullYear()} Driver Performance Tracker. Todos os direitos reservados.</p>
+        <p>&copy; {new Date().getFullYear()} Acompanhamento de motoristas.</p>
       </footer>
     </div>
   );

@@ -38,6 +38,11 @@ const EvaluationForm: React.FC = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastSavedEvaluation, setLastSavedEvaluation] = useState<Evaluation | null>(null);
 
+  // Filiais ordenadas alfabeticamente
+  const sortedBranches = useMemo(() => {
+    return [...branches].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [branches]);
+
   useEffect(() => {
     const loadTemplates = async () => {
       setIsLoadingTemplates(true);
@@ -82,7 +87,7 @@ const EvaluationForm: React.FC = () => {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -250,7 +255,7 @@ const EvaluationForm: React.FC = () => {
               disabled={isLoadingBranches}
             >
               <option value="">Selecione a filial</option>
-              {branches.map(branch => (
+              {sortedBranches.map(branch => (
                 <option key={branch} value={branch}>{branch}</option>
               ))}
             </Select>

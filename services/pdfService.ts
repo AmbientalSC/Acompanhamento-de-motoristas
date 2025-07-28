@@ -3,6 +3,36 @@ import html2canvas from 'html2canvas';
 import type { Evaluation } from '../types';
 
 export class PDFService {
+  private static async loadLogo(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Não foi possível criar canvas'));
+          return;
+        }
+        
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        
+        try {
+          const dataURL = canvas.toDataURL('image/png');
+          resolve(dataURL);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => {
+        reject(new Error('Erro ao carregar logo'));
+      };
+      img.src = './ambiental.svg';
+    });
+  }
+
   static async generateEvaluationPDF(evaluation: Evaluation): Promise<void> {
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -12,25 +42,43 @@ export class PDFService {
     
     let yPosition = margin;
 
-    // Cabeçalho com logo
+    // Cabeçalho com logo - altura aumentada para acomodar logo centralizada
     pdf.setFillColor(30, 64, 175); // brand-primary
-    pdf.rect(0, 0, pageWidth, 40, 'F');
+    pdf.rect(0, 0, pageWidth, 60, 'F');
     
-    // Logo (texto como placeholder)
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('AMBIENTAL', margin, 25);
+    try {
+      // Carregar e adicionar logo - centralizada acima do título
+      const logoDataURL = await this.loadLogo();
+      const logoWidth = 57;
+      const logoHeight = 30;
+      const logoX = (pageWidth - logoWidth) / 2; // Centralizar horizontalmente
+      pdf.addImage(logoDataURL, 'PNG', logoX, 10, logoWidth, logoHeight);
+      
+      // Título do relatório - abaixo da logo centralizada
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+    } catch (error) {
+      console.warn('Erro ao carregar logo, usando texto como fallback:', error);
+      // Fallback: texto da logo
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('AMBIENTAL', pageWidth / 2, 25, { align: 'center' });
+      
+      // Título do relatório
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+    }
     
-    // Título do relatório
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(20);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 60, { align: 'center' });
-    
+    // Posição inicial do conteúdo - ajustada para dar espaço ao cabeçalho
     yPosition = 80;
 
     // Informações do motorista
+    pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
     pdf.text('INFORMAÇÕES DO MOTORISTA', margin, yPosition);
@@ -54,8 +102,29 @@ export class PDFService {
       pdf.setFont('helvetica', 'bold');
       pdf.text(info.label, margin, yPosition);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(info.value, margin + 40, yPosition);
-      yPosition += 8;
+      
+      // Ajuste especial para "Modelo de Avaliação" - quebra de linha se necessário
+      if (info.label === 'Modelo de Avaliação:') {
+        const maxWidth = contentWidth - 60; // Espaço disponível após o label
+        const valueLines = this.splitTextToFit(info.value, maxWidth);
+        
+        if (valueLines.length > 1) {
+          // Se precisa de múltiplas linhas, ajusta o espaçamento
+          pdf.text(valueLines[0], margin + 60, yPosition);
+          yPosition += 6;
+          
+          for (let i = 1; i < valueLines.length; i++) {
+            pdf.text(valueLines[i], margin + 60, yPosition);
+            yPosition += 6;
+          }
+        } else {
+          pdf.text(info.value, margin + 60, yPosition);
+          yPosition += 8;
+        }
+      } else {
+        pdf.text(info.value, margin + 60, yPosition);
+        yPosition += 8;
+      }
     });
 
     yPosition += 10;
@@ -188,27 +257,46 @@ export class PDFService {
     
     let yPosition = margin;
 
-    // Cabeçalho com logo
+    // Cabeçalho com logo - altura aumentada para acomodar logo centralizada
     pdf.setFillColor(30, 64, 175);
-    pdf.rect(0, 0, pageWidth, 40, 'F');
+    pdf.rect(0, 0, pageWidth, 60, 'F');
     
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('AMBIENTAL', margin, 25);
+    try {
+      // Carregar e adicionar logo - centralizada acima do título
+      const logoDataURL = await this.loadLogo();
+      const logoWidth = 57;
+      const logoHeight = 30;
+      const logoX = (pageWidth - logoWidth) / 2; // Centralizar horizontalmente
+      pdf.addImage(logoDataURL, 'PNG', logoX, 10, logoWidth, logoHeight);
+      
+      // Título do relatório - abaixo da logo centralizada
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+    } catch (error) {
+      console.warn('Erro ao carregar logo, usando texto como fallback:', error);
+      // Fallback: texto da logo
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('AMBIENTAL', pageWidth / 2, 25, { align: 'center' });
+      
+      // Título do relatório
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+    }
     
-    // Título do relatório
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(20);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 60, { align: 'center' });
-    
+    // Posição inicial do conteúdo - ajustada para dar espaço ao cabeçalho
     yPosition = 80;
 
     // Informações do motorista
     const driverName = evaluations[0].motorista;
     const driverMatricula = evaluations[0].matricula;
     
+    pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
     pdf.text('INFORMAÇÕES DO MOTORISTA', margin, yPosition);
