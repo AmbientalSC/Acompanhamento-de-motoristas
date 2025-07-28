@@ -99,36 +99,43 @@ const GeneralDashboard: React.FC = () => {
       });
     });
 
-    const criteriaAverages = Object.entries(criteriaStats).map(([name, data]) => ({
-      name,
-      Média: parseFloat((data.totalScore / data.count).toFixed(2)),
-    })).sort((a, b) => a.Média - b.Média);
+    // Top 5 e Bottom 5 critérios
+    const criteriaAverages = Object.entries(criteriaStats).map(([criterion, stats]) => ({
+      name: criterion,
+      Média: stats.totalScore / stats.count
+    })).sort((a, b) => b.Média - a.Média);
 
-    const top5Criteria = [...criteriaAverages].sort((a,b) => b.Média - a.Média).slice(0, 5);
-    const bottom5Criteria = criteriaAverages.slice(0, 5);
+    const top5Criteria = criteriaAverages.slice(0, 5);
+    const bottom5Criteria = criteriaAverages.slice(-5).reverse();
 
-    // Performance by Branch (Filial)
+    // Performance by Branch
     const branchStats: { [key: string]: { totalScore: number; count: number } } = {};
-    filteredEvaluations.forEach(e => {
-        if (!branchStats[e.filial]) branchStats[e.filial] = { totalScore: 0, count: 0 };
-        branchStats[e.filial].totalScore += e.averageScore;
-        branchStats[e.filial].count++;
+    filteredEvaluations.forEach(evaluation => {
+      if (!branchStats[evaluation.filial]) {
+        branchStats[evaluation.filial] = { totalScore: 0, count: 0 };
+      }
+      branchStats[evaluation.filial].totalScore += evaluation.averageScore;
+      branchStats[evaluation.filial].count++;
     });
-    const performanceByBranch = Object.entries(branchStats).map(([name, data]) => ({
-        name,
-        Média: parseFloat((data.totalScore / data.count).toFixed(2)),
+
+    const performanceByBranch = Object.entries(branchStats).map(([branch, stats]) => ({
+      name: branch,
+      Média: stats.totalScore / stats.count
     }));
 
-    // Performance by Shift (Turno)
+    // Performance by Shift
     const shiftStats: { [key: string]: { totalScore: number; count: number } } = {};
-    filteredEvaluations.forEach(e => {
-        if (!shiftStats[e.turno]) shiftStats[e.turno] = { totalScore: 0, count: 0 };
-        shiftStats[e.turno].totalScore += e.averageScore;
-        shiftStats[e.turno].count++;
+    filteredEvaluations.forEach(evaluation => {
+      if (!shiftStats[evaluation.turno]) {
+        shiftStats[evaluation.turno] = { totalScore: 0, count: 0 };
+      }
+      shiftStats[evaluation.turno].totalScore += evaluation.averageScore;
+      shiftStats[evaluation.turno].count++;
     });
-    const performanceByShift = Object.entries(shiftStats).map(([name, data]) => ({
-        name,
-        value: parseFloat((data.totalScore / data.count).toFixed(2)),
+
+    const performanceByShift = Object.entries(shiftStats).map(([shift, stats]) => ({
+      name: shift,
+      value: stats.totalScore / stats.count
     }));
 
     return {
@@ -146,14 +153,14 @@ const GeneralDashboard: React.FC = () => {
 
   const renderChart = (title: string, data: any[], barKey: string, fillColor: string, icon: React.ReactNode) => (
     <Card>
-        <div className="p-6">
-            <h3 className="text-lg font-bold text-brand-dark mb-4 flex items-center gap-2">{icon}{title}</h3>
-            <div className="h-64">
+        <div className="p-4 sm:p-6">
+            <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">{icon}{title}</h3>
+            <div className="h-48 sm:h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, left: 120, bottom: 5 }}>
+                    <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, left: 80, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
                         <XAxis type="number" domain={[0, 10]} />
-                        <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} interval={0} />
+                        <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} interval={0} />
                         <Tooltip formatter={(value: number) => value.toFixed(2)} contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }} />
                         <Bar dataKey={barKey} fill={fillColor} background={{ fill: '#eee' }} />
                     </BarChart>
@@ -175,38 +182,40 @@ const GeneralDashboard: React.FC = () => {
   if (!analytics) {
     return (
       <Card>
-        <div className="p-8 flex flex-col items-center justify-center text-center">
-            <AlertTriangle className="h-16 w-16 text-yellow-400 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-700">Nenhuma Avaliação Encontrada</h3>
-            <p className="text-gray-500 mt-2">Ainda não há dados para analisar. Comece preenchendo o formulário de avaliação.</p>
+        <div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center">
+            <AlertTriangle className="h-12 w-12 sm:h-16 sm:w-16 text-yellow-400 mb-4" />
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Nenhuma Avaliação Encontrada</h3>
+            <p className="text-gray-500 mt-2 text-sm sm:text-base">Ainda não há dados para analisar. Comece preenchendo o formulário de avaliação.</p>
         </div>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
         {/* Header com Filtros */}
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-brand-dark">Dashboard Geral</h2>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-brand-dark">Dashboard Geral</h2>
           <div className="flex items-center gap-2">
             {hasActiveFilters && (
               <Button 
                 onClick={clearFilters} 
                 variant="secondary" 
-                className="!py-2 !px-3 text-sm"
+                className="!py-2 !px-3 text-xs sm:text-sm"
               >
-                <X className="h-4 w-4 mr-1" />
-                Limpar Filtros
+                <X className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                <span className="hidden sm:inline">Limpar Filtros</span>
+                <span className="sm:hidden">Limpar</span>
               </Button>
             )}
             <Button 
               onClick={() => setShowFilters(!showFilters)} 
               variant={showFilters ? "primary" : "secondary"}
-              className="!py-2 !px-3 text-sm"
+              className="!py-2 !px-3 text-xs sm:text-sm"
             >
-              <Filter className="h-4 w-4 mr-1" />
-              Filtros
+              <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+              <span className="hidden sm:inline">Filtros</span>
+              <span className="sm:hidden">Filtros</span>
             </Button>
           </div>
         </div>
@@ -214,12 +223,12 @@ const GeneralDashboard: React.FC = () => {
         {/* Painel de Filtros */}
         {showFilters && (
           <Card>
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-brand-dark mb-4 flex items-center gap-2">
-                <Filter className="h-5 w-5 text-brand-primary" />
+            <div className="p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
+                <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-brand-primary" />
                 Filtros de Análise
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
                 <Select
                   label="Filial"
                   value={filters.filial}
@@ -254,33 +263,33 @@ const GeneralDashboard: React.FC = () => {
                 </Select>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     Data Início
                   </label>
                   <input
                     type="date"
                     value={filters.dataInicio}
                     onChange={(e) => handleFilterChange('dataInicio', e.target.value)}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent sm:text-sm"
+                    className="block w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent text-xs sm:text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     Data Fim
                   </label>
                   <input
                     type="date"
                     value={filters.dataFim}
                     onChange={(e) => handleFilterChange('dataFim', e.target.value)}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent sm:text-sm"
+                    className="block w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent text-xs sm:text-sm"
                   />
                 </div>
               </div>
               
               {hasActiveFilters && (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-sm text-blue-700">
+                <div className="mt-3 sm:mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-xs sm:text-sm text-blue-700">
                     <strong>Filtros ativos:</strong> 
                     {filters.filial && ` Filial: ${filters.filial}`}
                     {filters.turno && ` Turno: ${filters.turno}`}
@@ -295,46 +304,55 @@ const GeneralDashboard: React.FC = () => {
         )}
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="p-6 flex items-center gap-4">
-                <div className="p-3 bg-blue-100 rounded-full"><FileSpreadsheet className="h-8 w-8 text-brand-primary" /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
+                  <FileSpreadsheet className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
+                </div>
                 <div>
-                    <p className="text-sm font-medium text-gray-500">Total de Avaliações</p>
-                    <p className="text-3xl font-bold text-brand-dark">{analytics.totalEvaluations}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Total de Avaliações</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.totalEvaluations}</p>
                 </div>
             </Card>
-            <Card className="p-6 flex items-center gap-4">
-                 <div className="p-3 bg-blue-100 rounded-full"><Users className="h-8 w-8 text-brand-primary" /></div>
+            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+                 <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
+                   <Users className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
+                 </div>
                 <div>
-                    <p className="text-sm font-medium text-gray-500">Motoristas Avaliados</p>
-                    <p className="text-3xl font-bold text-brand-dark">{analytics.uniqueDrivers}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Motoristas Avaliados</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.uniqueDrivers}</p>
                 </div>
             </Card>
-            <Card className="p-6 flex items-center gap-4">
-                 <div className="p-3 bg-blue-100 rounded-full"><TrendingUp className="h-8 w-8 text-brand-primary" /></div>
+            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+                 <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
+                   <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
+                 </div>
                 <div>
-                    <p className="text-sm font-medium text-gray-500">Média Geral</p>
-                    <p className="text-3xl font-bold text-brand-dark">{analytics.overallAverage.toFixed(2)}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Média Geral</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.overallAverage.toFixed(2)}</p>
                 </div>
             </Card>
         </div>
 
         {/* Criteria Ranking */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {renderChart('Top 5 Critérios (Maiores Médias)', analytics.top5Criteria, 'Média', '#16A34A', <TrendingUp className="text-green-600"/>)}
             {renderChart('Top 5 Critérios (Menores Médias)', analytics.bottom5Criteria, 'Média', '#DC2626', <TrendingDown className="text-red-600"/>)}
         </div>
 
         {/* Performance by Branch and Shift */}
-         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             <Card>
-                <div className="p-6">
-                    <h3 className="text-lg font-bold text-brand-dark mb-4 flex items-center gap-2"><Building className="text-brand-primary" />Desempenho por Filial</h3>
-                    <div className="h-80">
+                <div className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
+                      <Building className="text-brand-primary" />
+                      Desempenho por Filial
+                    </h3>
+                    <div className="h-64 sm:h-80">
                          <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={analytics.performanceByBranch} margin={{ top: 5, right: 20, left: 5, bottom: 50 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} interval={0} tick={{ fontSize: 12 }} />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} interval={0} tick={{ fontSize: 10 }} />
                                 <YAxis domain={[0, 10]}/>
                                 <Tooltip formatter={(value: number) => value.toFixed(2)} contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }} />
                                 <Bar dataKey="Média" fill="#1E40AF" />
@@ -344,12 +362,15 @@ const GeneralDashboard: React.FC = () => {
                 </div>
             </Card>
              <Card>
-                <div className="p-6">
-                    <h3 className="text-lg font-bold text-brand-dark mb-4 flex items-center gap-2"><Clock className="text-brand-primary" />Desempenho por Turno</h3>
-                     <div className="h-80">
+                <div className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
+                      <Clock className="text-brand-primary" />
+                      Desempenho por Turno
+                    </h3>
+                     <div className="h-64 sm:h-80">
                          <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie data={analytics.performanceByShift} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, value }) => `${name}: ${value.toFixed(2)}`}>
+                                <Pie data={analytics.performanceByShift} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value.toFixed(2)}`}>
                                      {analytics.performanceByShift.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                                     ))}
