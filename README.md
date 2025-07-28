@@ -59,6 +59,7 @@ git push origin main
 
 2. O GitHub Actions irá automaticamente:
    - Fazer build do projeto
+   - Criar/atualizar a branch `gh-pages` com os arquivos de produção
    - Deployar para o GitHub Pages
    - Disponibilizar em: `https://seu-usuario.github.io/Acompanhamento-de-motoristas/`
 
