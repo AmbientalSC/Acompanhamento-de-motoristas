@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock, FileText } from 'lucide-react';
 import type { Evaluation } from '../types';
 import { getEvaluations } from '../services/firebaseService';
+import { PDFService } from '../services/pdfService';
 import Card from './ui/Card';
 import Select from './ui/Select';
+import Button from './ui/Button';
 
 const formatDate = (dateString: string) => {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
@@ -61,6 +63,34 @@ const DriverDashboard: React.FC = () => {
       Nota: score,
     }));
   }, [selectedEvaluation]);
+
+  const handleGenerateDriverAnalysisPDF = async () => {
+    if (driverEvaluations.length === 0) {
+      alert('Nenhuma avaliação encontrada para gerar relatório.');
+      return;
+    }
+
+    try {
+      await PDFService.generateDriverAnalysisPDF(driverEvaluations);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF. Tente novamente.');
+    }
+  };
+
+  const handleGenerateEvaluationPDF = async () => {
+    if (!selectedEvaluation) {
+      alert('Selecione uma avaliação para gerar PDF.');
+      return;
+    }
+
+    try {
+      await PDFService.generateEvaluationPDF(selectedEvaluation);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF. Tente novamente.');
+    }
+  };
   
   const renderAverageStatus = (score: number) => {
     if (score > 7) {
@@ -97,17 +127,31 @@ const DriverDashboard: React.FC = () => {
     <div className="space-y-6">
       <Card>
         <div className="p-6">
-          <h2 className="text-xl font-bold text-brand-dark mb-4">Filtro de Visualização</h2>
-          <Select
-            label="Selecione o Motorista"
-            value={selectedDriver}
-            onChange={e => setSelectedDriver(e.target.value)}
-          >
-            <option value="" disabled>Selecione um motorista</option>
-            {drivers.map(driver => (
-              <option key={driver} value={driver}>{driver}</option>
-            ))}
-          </Select>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-brand-dark mb-4">Filtro de Visualização</h2>
+              <Select
+                label="Selecione o Motorista"
+                value={selectedDriver}
+                onChange={e => setSelectedDriver(e.target.value)}
+              >
+                <option value="" disabled>Selecione um motorista</option>
+                {drivers.map(driver => (
+                  <option key={driver} value={driver}>{driver}</option>
+                ))}
+              </Select>
+            </div>
+            {selectedDriver && driverEvaluations.length > 0 && (
+              <Button
+                onClick={handleGenerateDriverAnalysisPDF}
+                variant="secondary"
+                className="!py-2 !px-4 text-sm"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Gerar Relatório Completo
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -154,7 +198,17 @@ const DriverDashboard: React.FC = () => {
                         <h3 className="text-xl font-bold text-brand-dark">Detalhes da Avaliação ({formatDate(selectedEvaluation.data)})</h3>
                         <p className="text-sm text-gray-500">Usando modelo: {selectedEvaluation.templateName}</p>
                     </div>
-                    {renderAverageStatus(selectedEvaluation.averageScore)}
+                    <div className="flex items-center gap-3">
+                      {renderAverageStatus(selectedEvaluation.averageScore)}
+                      <Button
+                        onClick={handleGenerateEvaluationPDF}
+                        variant="secondary"
+                        className="!py-2 !px-3 text-sm"
+                      >
+                        <FileText className="h-4 w-4 mr-1" />
+                        PDF
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="mb-8">

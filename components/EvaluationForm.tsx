@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Save, RotateCcw, Loader2 } from 'lucide-react';
+import { Save, RotateCcw, Loader2, FileText } from 'lucide-react';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
+import { PDFService } from '../services/pdfService';
 import RatingSlider from './RatingSlider';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -35,6 +36,7 @@ const EvaluationForm: React.FC = () => {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [lastSavedEvaluation, setLastSavedEvaluation] = useState<Evaluation | null>(null);
 
   useEffect(() => {
     const loadTemplates = async () => {
@@ -101,6 +103,7 @@ const EvaluationForm: React.FC = () => {
     setScores({});
     setSelectedTemplate(null);
     setFormStep(1);
+    setLastSavedEvaluation(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,6 +121,15 @@ const EvaluationForm: React.FC = () => {
 
     try {
       await saveEvaluation(evaluationToSave);
+      
+      // Criar objeto de avaliação completo para o PDF
+      const completeEvaluation: Evaluation = {
+        id: Date.now().toString(), // ID temporário
+        timestamp: Date.now(),
+        ...evaluationToSave,
+      };
+      
+      setLastSavedEvaluation(completeEvaluation);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       resetForm();
@@ -126,6 +138,20 @@ const EvaluationForm: React.FC = () => {
       alert("Falha ao salvar a avaliação. Tente novamente.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    if (!lastSavedEvaluation) {
+      alert('Nenhuma avaliação salva recentemente para gerar PDF.');
+      return;
+    }
+
+    try {
+      await PDFService.generateEvaluationPDF(lastSavedEvaluation);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF. Tente novamente.');
     }
   };
   
@@ -280,7 +306,17 @@ const EvaluationForm: React.FC = () => {
       
       {showSuccess && (
         <div className="fixed bottom-4 right-4 bg-green-500 text-white py-3 px-5 rounded-lg shadow-xl animate-bounce">
-          Avaliação salva com sucesso!
+          <div className="flex items-center gap-2">
+            <span>Avaliação salva com sucesso!</span>
+            <Button 
+              onClick={handleGeneratePDF} 
+              variant="secondary" 
+              className="!bg-white !text-green-600 hover:!bg-gray-100 !py-1 !px-3 text-sm"
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              Gerar PDF
+            </Button>
+          </div>
         </div>
       )}
     </form>
