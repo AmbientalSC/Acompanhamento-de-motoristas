@@ -92,14 +92,6 @@ Acompanhamento-de-motoristas/
 - `npm run build` - Gera o build de produção
 - `npm run preview` - Preview do build de produção
 
-## 🌐 Acesso Online
-
-O projeto está disponível em: [https://seu-usuario.github.io/Acompanhamento-de-motoristas/](https://seu-usuario.github.io/Acompanhamento-de-motoristas/)
-
-## 📝 Configuração do Firebase
-
-O projeto já está configurado com Firebase. As configurações estão em `firebase.ts`.
-
 ## 🤝 Contribuição
 
 1. Faça um fork do projeto
