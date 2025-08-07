@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import type { Evaluation } from '../types';
+import { getEvaluationStatus } from '../utils/evaluationUtils';
 
 export class PDFService {
   private static async loadLogo(): Promise<string> {
@@ -161,10 +161,11 @@ export class PDFService {
 
     yPosition += 10;
 
-    // Média geral
+    // Média geral com status
+    const status = getEvaluationStatus(evaluation.averageScore);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`MÉDIA GERAL: ${evaluation.averageScore.toFixed(2)}`, margin, yPosition);
+    pdf.text(`MÉDIA GERAL: ${evaluation.averageScore.toFixed(2)} (${status.label})`, margin, yPosition);
     yPosition += 15;
 
     // Observações
@@ -364,7 +365,8 @@ export class PDFService {
     pdf.text('Filial', margin + 35, yPosition);
     pdf.text('Turno', margin + 70, yPosition);
     pdf.text('Média', margin + 100, yPosition);
-    pdf.text('Modelo', margin + 130, yPosition);
+    pdf.text('Status', margin + 130, yPosition);
+    pdf.text('Modelo', margin + 160, yPosition);
     yPosition += 8;
 
     // Dados da tabela
@@ -376,11 +378,14 @@ export class PDFService {
       }
       
       const date = new Date(evaluation.data).toLocaleDateString('pt-BR');
+      const status = getEvaluationStatus(evaluation.averageScore);
+      
       pdf.text(date, margin + 2, yPosition);
       pdf.text(evaluation.filial, margin + 35, yPosition);
       pdf.text(evaluation.turno, margin + 70, yPosition);
       pdf.text(evaluation.averageScore.toFixed(2), margin + 100, yPosition);
-      pdf.text(evaluation.templateName, margin + 130, yPosition);
+      pdf.text(status.label, margin + 130, yPosition);
+      pdf.text(evaluation.templateName, margin + 160, yPosition);
       yPosition += 6;
     });
 

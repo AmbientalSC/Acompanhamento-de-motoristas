@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import type { Evaluation } from '../types';
 import { getEvaluations } from '../services/evaluationService';
+import { getEvaluationStatus } from '../utils/evaluationUtils';
 import Card from './ui/Card';
 import Select from './ui/Select';
 
@@ -72,6 +73,19 @@ const Dashboard: React.FC = () => {
     return <div className="flex items-center gap-2 text-red-600"><AlertCircle className="h-6 w-6" /> <span className="font-bold text-lg">Reprovado ({score.toFixed(2)})</span></div>;
   };
 
+  const renderStatusBadge = (score: number) => {
+    const status = getEvaluationStatus(score);
+    const IconComponent = status.icon === 'CheckCircle' ? CheckCircle : 
+                         status.icon === 'Clock' ? Clock : AlertCircle;
+    
+    return (
+      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.bgColor} ${status.color}`}>
+        <IconComponent className="h-3 w-3" />
+        {status.label}
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -128,10 +142,13 @@ const Dashboard: React.FC = () => {
                   }`}
                 >
                   <div className="p-4">
-                      <div className="flex justify-between items-center">
-                          <div>
+                      <div className="flex justify-between items-start">
+                          <div className="flex-1">
                               <p className="font-semibold text-gray-800">Data: {formatDate(evaluation.data)}</p>
                               <p className="text-sm text-gray-500">VT: {evaluation.vt}</p>
+                              <div className="mt-2">
+                                {renderStatusBadge(evaluation.averageScore)}
+                              </div>
                           </div>
                           <div className="text-right">
                               <span className="font-bold text-lg text-brand-primary">{evaluation.averageScore.toFixed(2)}</span>
