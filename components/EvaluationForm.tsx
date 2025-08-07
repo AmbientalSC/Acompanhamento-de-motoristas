@@ -5,6 +5,7 @@ import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import RatingSlider from './RatingSlider';
+import DynamicField from './ui/DynamicField';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Input from './ui/Input';
@@ -19,6 +20,7 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'averageScore'
     motorista: '',
     data: new Date().toISOString().split('T')[0],
     vt: '',
+    fieldValues: {},
     pros: '',
     contras: '',
     consideracoes: '',
@@ -34,6 +36,7 @@ const EvaluationForm: React.FC = () => {
 
   const [formData, setFormData] = useState(getInitialState());
   const [scores, setScores] = useState<Record<string, number>>({});
+  const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastSavedEvaluation, setLastSavedEvaluation] = useState<Evaluation | null>(null);
@@ -79,20 +82,34 @@ const EvaluationForm: React.FC = () => {
     if (template) {
       setSelectedTemplate(template);
       
-      let criteriaNames: string[];
       if (template.criteriaConfig) {
-        criteriaNames = template.criteriaConfig.map(c => c.name);
+        // Nova estrutura com tipos de campo
+        const initialScores: Record<string, number> = {};
+        const initialFieldValues: Record<string, any> = {};
+        
+        template.criteriaConfig.forEach(criterion => {
+          if (criterion.type === 'rating') {
+            initialScores[criterion.id] = 5;
+          } else if (criterion.type === 'checkbox') {
+            initialFieldValues[criterion.id] = false;
+          } else {
+            initialFieldValues[criterion.id] = '';
+          }
+        });
+        
+        setScores(initialScores);
+        setFieldValues(initialFieldValues);
       } else {
         // Compatibilidade com templates antigos
-        criteriaNames = template.criteria;
+        const initialScores = template.criteria.reduce((acc, criterion) => {
+          acc[criterion] = 5;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        setScores(initialScores);
+        setFieldValues({});
       }
       
-      const initialScores = criteriaNames.reduce((acc, criterion) => {
-        acc[criterion] = 5;
-        return acc;
-      }, {} as Record<string, number>);
-      
-      setScores(initialScores);
       setFormStep(2);
     }
   };
@@ -106,26 +123,33 @@ const EvaluationForm: React.FC = () => {
     setScores(prev => ({ ...prev, [criterion]: value }));
   }, []);
 
+  const handleFieldChange = useCallback((fieldId: string, value: any) => {
+    setFieldValues(prev => ({ ...prev, [fieldId]: value }));
+  }, []);
+
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
     
-    let criteriaCount: number;
+    let ratingFieldsCount: number;
     if (selectedTemplate.criteriaConfig) {
-      criteriaCount = selectedTemplate.criteriaConfig.length;
+      // Contar apenas campos do tipo 'rating'
+      ratingFieldsCount = selectedTemplate.criteriaConfig.filter(c => c.type === 'rating').length;
     } else {
-      criteriaCount = selectedTemplate.criteria.length;
+      // Compatibilidade com templates antigos (todos eram rating)
+      ratingFieldsCount = selectedTemplate.criteria.length;
     }
     
-    if (criteriaCount === 0) return 0;
+    if (ratingFieldsCount === 0) return 0;
     
     const total = Object.values(scores).reduce((sum, score) => sum + score, 0);
-    const average = total / criteriaCount;
+    const average = total / ratingFieldsCount;
     return isNaN(average) ? 0 : average;
   }, [scores, selectedTemplate]);
 
   const resetForm = () => {
     setFormData(getInitialState());
     setScores({});
+    setFieldValues({});
     setSelectedTemplate(null);
     setFormStep(1);
     setLastSavedEvaluation(null);
@@ -139,6 +163,7 @@ const EvaluationForm: React.FC = () => {
     const evaluationToSave = {
         ...formData,
         scores,
+        fieldValues,
         averageScore,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
@@ -283,18 +308,24 @@ const EvaluationForm: React.FC = () => {
         </div>
       </Card>
       
-      {selectedTemplate && selectedTemplate.criteria.length > 0 && (
+      {selectedTemplate && ((selectedTemplate.criteriaConfig && selectedTemplate.criteriaConfig.length > 0) || (selectedTemplate.criteria && selectedTemplate.criteria.length > 0)) && (
           <Card className="mt-6">
             <div className="p-6">
               <h3 className="text-xl font-bold text-brand-dark mb-6">Critérios de Avaliação</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 {selectedTemplate.criteriaConfig ? (
                   selectedTemplate.criteriaConfig.map(criterion => (
-                    <RatingSlider
-                      key={criterion.name}
-                      label={criterion.name + (criterion.required ? ' *' : '')}
-                      value={scores[criterion.name] ?? 5}
-                      onChange={(value) => handleScoreChange(criterion.name, value)}
+                    <DynamicField
+                      key={criterion.id}
+                      criterion={criterion}
+                      value={criterion.type === 'rating' ? (scores[criterion.id] ?? 5) : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''))}
+                      onChange={(value) => {
+                        if (criterion.type === 'rating') {
+                          handleScoreChange(criterion.id, value);
+                        } else {
+                          handleFieldChange(criterion.id, value);
+                        }
+                      }}
                     />
                   ))
                 ) : (

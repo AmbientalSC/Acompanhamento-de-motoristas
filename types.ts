@@ -1,8 +1,22 @@
 
-// Representa um critério de avaliação com configurações
+// Tipos de campo disponíveis
+export type FieldType = 'rating' | 'text' | 'radio' | 'date' | 'checkbox';
+
+// Opção para campos do tipo rádio
+export interface RadioOption {
+  label: string;
+  value: string;
+}
+
+// Representa um critério de avaliação com configurações expandidas
 export interface EvaluationCriterion {
-  name: string;
-  required: boolean;
+  id: string; // Identificador único para o campo
+  name: string; // Nome/label do campo
+  required: boolean; // Se é obrigatório
+  type: FieldType; // Tipo do campo
+  options?: RadioOption[]; // Opções para campos de rádio
+  placeholder?: string; // Placeholder para campos de texto
+  description?: string; // Descrição/ajuda do campo
 }
 
 // Tipos de usuário no sistema
@@ -43,6 +57,7 @@ export interface Evaluation {
   templateId: string; // ID do modelo usado
   templateName: string; // Nome do modelo usado
   scores: Record<string, number>; // Scores dinâmicos baseados nos critérios do modelo
+  fieldValues: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
   averageScore: number;
   pros: string;
   contras: string;

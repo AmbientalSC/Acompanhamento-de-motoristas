@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PlusCircle, Trash2, Save, Loader2, FileText, Edit, XCircle, Building, Settings, GripVertical, ChevronUp, ChevronDown, Users } from 'lucide-react';
-import type { EvaluationTemplate, EvaluationCriterion, User } from '../types';
+import { PlusCircle, Trash2, Save, Loader2, FileText, Edit, XCircle, Building, Settings, GripVertical, ChevronUp, ChevronDown, Users, Download } from 'lucide-react';
+import type { EvaluationTemplate, EvaluationCriterion, User, FieldType } from '../types';
 import { getTemplates, saveTemplate, updateTemplate, deleteTemplate, getBranches, saveBranch, deleteBranch, getUsers, saveUser, updateUser, deleteUser } from '../services/firebaseService';
 import { useAuth } from '../contexts/AuthContext';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
+import { exampleTemplates } from '../data/exampleTemplates';
 
 type SubTab = 'models' | 'branches' | 'users';
 
@@ -21,7 +22,12 @@ const TemplateManager: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState('');
-  const [criteriaConfig, setCriteriaConfig] = useState<EvaluationCriterion[]>([{ name: '', required: false }]);
+  const [criteriaConfig, setCriteriaConfig] = useState<EvaluationCriterion[]>([{ 
+    id: Date.now().toString(), 
+    name: '', 
+    required: false, 
+    type: 'rating' 
+  }]);
   const formRef = useRef<HTMLDivElement>(null);
 
   // Estados para filiais
@@ -79,18 +85,34 @@ const TemplateManager: React.FC = () => {
   };
 
   // Funções para modelos
-  const handleCriterionChange = (index: number, field: 'name' | 'required', value: string | boolean) => {
+  const generateId = () => {
+    return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  };
+
+  const handleCriterionChange = (index: number, field: keyof EvaluationCriterion, value: any) => {
     const updatedCriteria = [...criteriaConfig];
-    if (field === 'name') {
-      updatedCriteria[index].name = value as string;
-    } else {
-      updatedCriteria[index].required = value as boolean;
+    updatedCriteria[index] = { ...updatedCriteria[index], [field]: value };
+    
+    // Se mudou para tipo radio e não tem opções, inicializar
+    if (field === 'type' && value === 'radio' && !updatedCriteria[index].options) {
+      updatedCriteria[index].options = [{ label: '', value: '' }];
     }
+    
+    // Se mudou para outro tipo que não radio, limpar opções
+    if (field === 'type' && value !== 'radio') {
+      updatedCriteria[index].options = undefined;
+    }
+    
     setCriteriaConfig(updatedCriteria);
   };
 
   const addCriterion = () => {
-    setCriteriaConfig([...criteriaConfig, { name: '', required: false }]);
+    setCriteriaConfig([...criteriaConfig, { 
+      id: generateId(),
+      name: '', 
+      required: false, 
+      type: 'rating' 
+    }]);
   };
 
   const removeCriterion = (index: number) => {
@@ -100,10 +122,41 @@ const TemplateManager: React.FC = () => {
     }
   };
 
+  const addRadioOption = (criterionIndex: number) => {
+    const updatedCriteria = [...criteriaConfig];
+    if (!updatedCriteria[criterionIndex].options) {
+      updatedCriteria[criterionIndex].options = [];
+    }
+    updatedCriteria[criterionIndex].options!.push({ label: '', value: '' });
+    setCriteriaConfig(updatedCriteria);
+  };
+
+  const removeRadioOption = (criterionIndex: number, optionIndex: number) => {
+    const updatedCriteria = [...criteriaConfig];
+    if (updatedCriteria[criterionIndex].options && updatedCriteria[criterionIndex].options!.length > 1) {
+      updatedCriteria[criterionIndex].options!.splice(optionIndex, 1);
+      setCriteriaConfig(updatedCriteria);
+    }
+  };
+
+  const handleRadioOptionChange = (criterionIndex: number, optionIndex: number, field: 'label' | 'value', value: string) => {
+    const updatedCriteria = [...criteriaConfig];
+    if (!updatedCriteria[criterionIndex].options) {
+      updatedCriteria[criterionIndex].options = [];
+    }
+    updatedCriteria[criterionIndex].options![optionIndex][field] = value;
+    setCriteriaConfig(updatedCriteria);
+  };
+
   const resetForm = () => {
     setEditingTemplateId(null);
     setTemplateName('');
-    setCriteriaConfig([{ name: '', required: false }]);
+    setCriteriaConfig([{ 
+      id: generateId(),
+      name: '', 
+      required: false, 
+      type: 'rating' 
+    }]);
   };
 
   const handleEdit = (template: EvaluationTemplate) => {
@@ -113,14 +166,30 @@ const TemplateManager: React.FC = () => {
     
     // Converter criteria antigas para nova estrutura se necessário
     if (template.criteriaConfig && template.criteriaConfig.length > 0) {
-      setCriteriaConfig([...template.criteriaConfig]);
+      // Garantir que todos os critérios tenham IDs e tipos
+      const updatedCriteria = template.criteriaConfig.map(criterion => ({
+        ...criterion,
+        id: criterion.id || generateId(),
+        type: criterion.type || 'rating'
+      }));
+      setCriteriaConfig(updatedCriteria);
     } else if (template.criteria && template.criteria.length > 0) {
       // Compatibilidade com templates antigos
-      const convertedCriteria = template.criteria.map(name => ({ name, required: false }));
+      const convertedCriteria = template.criteria.map(name => ({ 
+        id: generateId(),
+        name, 
+        required: false, 
+        type: 'rating' as const 
+      }));
       setCriteriaConfig(convertedCriteria);
     } else {
       // Fallback para templates vazios
-      setCriteriaConfig([{ name: '', required: false }]);
+      setCriteriaConfig([{ 
+        id: generateId(),
+        name: '', 
+        required: false, 
+        type: 'rating' 
+      }]);
     }
     
     // Scroll para o formulário depois de um pequeno delay
@@ -167,7 +236,15 @@ const TemplateManager: React.FC = () => {
     const templateData = {
       name: templateName.trim(),
       criteria: criteriaConfig.map(c => c.name.trim()).filter(Boolean), // Compatibilidade
-      criteriaConfig: criteriaConfig.map(c => ({ name: c.name.trim(), required: c.required })).filter(c => c.name),
+      criteriaConfig: criteriaConfig.map(c => ({
+        id: c.id || generateId(),
+        name: c.name.trim(),
+        required: c.required,
+        type: c.type || 'rating',
+        options: c.options || [],
+        placeholder: c.placeholder || '',
+        description: c.description || ''
+      })).filter(c => c.name),
     };
     
     try {
@@ -184,6 +261,26 @@ const TemplateManager: React.FC = () => {
       alert("Falha ao salvar o modelo. Tente novamente.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const importExampleTemplates = async () => {
+    if (window.confirm('Deseja importar os modelos de exemplo? Isso criará novos modelos de formulário prontos para uso.')) {
+      setIsSaving(true);
+      try {
+        const importedTemplates: EvaluationTemplate[] = [];
+        for (const template of exampleTemplates) {
+          const saved = await saveTemplate(template);
+          importedTemplates.push(saved);
+        }
+        setTemplates(prev => [...prev, ...importedTemplates]);
+        alert(`${importedTemplates.length} modelos de exemplo foram importados com sucesso!`);
+      } catch (error) {
+        console.error("Falha ao importar modelos:", error);
+        alert("Falha ao importar os modelos de exemplo. Tente novamente.");
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -376,76 +473,168 @@ const TemplateManager: React.FC = () => {
               />
               
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">Critérios de Avaliação</h3>
-                <p className="text-sm text-gray-600 mb-3">Use os botões para reordenar os critérios e marque se são obrigatórios</p>
-                <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">Campos do Formulário</h3>
+                <p className="text-sm text-gray-600 mb-3">Configure os campos que aparecerão no formulário de avaliação</p>
+                <div className="space-y-4">
                   {criteriaConfig.map((criterion, index) => (
-                    <div key={index} className="flex items-center gap-2 p-3 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center justify-center w-8 h-8 text-gray-400">
-                        <GripVertical className="h-5 w-5" />
-                      </div>
-                      <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label htmlFor={`criterion-${index}`} className="sr-only">{`Critério ${index + 1}`}</label>
-                          <input
-                            id={`criterion-${index}`}
-                            name={`criterion-${index}`}
-                            value={criterion.name}
-                            onChange={(e) => handleCriterionChange(index, 'name', e.target.value)}
-                            required
-                            placeholder="Nome do critério"
-                            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand-accent focus:border-brand-accent sm:text-sm"
-                          />
+                    <div key={criterion.id || index} className="p-4 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="flex items-center justify-center w-8 h-8 text-gray-400 mt-1">
+                          <GripVertical className="h-5 w-5" />
                         </div>
-                        <div className="flex items-center">
-                          <input
-                            id={`required-${index}`}
-                            type="checkbox"
-                            checked={criterion.required}
-                            onChange={(e) => handleCriterionChange(index, 'required', e.target.checked)}
-                            className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                        <div className="flex-grow space-y-4">
+                          {/* Nome do Campo */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Input
+                              label="Nome do Campo"
+                              value={criterion.name}
+                              onChange={(e) => handleCriterionChange(index, 'name', e.target.value)}
+                              placeholder="Ex: Estado do veículo"
+                              required
+                            />
+                            <Select
+                              label="Tipo do Campo"
+                              value={criterion.type || 'rating'}
+                              onChange={(e) => handleCriterionChange(index, 'type', e.target.value as FieldType)}
+                              required
+                            >
+                              <option value="rating">Avaliação (1-10)</option>
+                              <option value="text">Texto</option>
+                              <option value="radio">Múltipla Escolha</option>
+                              <option value="date">Data</option>
+                              <option value="checkbox">Checkbox</option>
+                            </Select>
+                          </div>
+
+                          {/* Configurações específicas por tipo */}
+                          {(criterion.type === 'text' || criterion.type === 'date') && (
+                            <Input
+                              label="Placeholder"
+                              value={criterion.placeholder || ''}
+                              onChange={(e) => handleCriterionChange(index, 'placeholder', e.target.value)}
+                              placeholder="Texto de exemplo para o usuário"
+                            />
+                          )}
+
+                          {criterion.type === 'radio' && (
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-700 mb-2">Opções de Múltipla Escolha</h4>
+                              <div className="space-y-2">
+                                {(criterion.options || [{ label: '', value: '' }]).map((option, optionIndex) => (
+                                  <div key={optionIndex} className="flex gap-2">
+                                    <Input
+                                      label={`Opção ${optionIndex + 1} - Texto`}
+                                      value={option.label}
+                                      onChange={(e) => handleRadioOptionChange(index, optionIndex, 'label', e.target.value)}
+                                      placeholder="Ex: Excelente"
+                                      className="flex-1"
+                                    />
+                                    <Input
+                                      label={`Opção ${optionIndex + 1} - Valor`}
+                                      value={option.value}
+                                      onChange={(e) => handleRadioOptionChange(index, optionIndex, 'value', e.target.value)}
+                                      placeholder="Ex: excelente"
+                                      className="flex-1"
+                                    />
+                                    <div className="flex items-end">
+                                      <Button
+                                        type="button"
+                                        onClick={() => removeRadioOption(index, optionIndex)}
+                                        variant="secondary"
+                                        className="!py-2 !px-3 !bg-red-100 !text-red-700 hover:!bg-red-200"
+                                        disabled={(criterion.options?.length || 0) <= 1}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                                <Button
+                                  type="button"
+                                  onClick={() => addRadioOption(index)}
+                                  variant="secondary"
+                                  className="!py-1 !px-3 text-sm"
+                                >
+                                  <PlusCircle className="h-4 w-4 mr-1" />
+                                  Adicionar Opção
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Descrição/Ajuda */}
+                          <Input
+                            label="Descrição (opcional)"
+                            value={criterion.description || ''}
+                            onChange={(e) => handleCriterionChange(index, 'description', e.target.value)}
+                            placeholder="Texto de ajuda para orientar o avaliador"
                           />
-                          <label htmlFor={`required-${index}`} className="ml-2 block text-sm text-gray-700">
-                            Campo obrigatório
-                          </label>
+
+                          {/* Campo obrigatório */}
+                          <div className="flex items-center">
+                            <input
+                              id={`required-${index}`}
+                              type="checkbox"
+                              checked={criterion.required}
+                              onChange={(e) => handleCriterionChange(index, 'required', e.target.checked)}
+                              className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                            />
+                            <label htmlFor={`required-${index}`} className="ml-2 block text-sm text-gray-700">
+                              Campo obrigatório
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button 
-                          type="button" 
-                          onClick={() => moveCriterionUp(index)}
-                          disabled={index === 0}
-                          className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                          aria-label="Mover para cima"
-                        >
-                          <ChevronUp className="h-4 w-4" />
-                        </button>
-                        <button 
-                          type="button" 
-                          onClick={() => moveCriterionDown(index)}
-                          disabled={index === criteriaConfig.length - 1}
-                          className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                          aria-label="Mover para baixo"
-                        >
-                          <ChevronDown className="h-4 w-4" />
-                        </button>
-                        <button 
-                          type="button" 
-                          onClick={() => removeCriterion(index)}
-                          className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                          aria-label="Remover critério"
-                          disabled={criteriaConfig.length <= 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        
+                        {/* Botões de ação */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => moveCriterionUp(index)}
+                            disabled={index === 0}
+                            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Mover para cima"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => moveCriterionDown(index)}
+                            disabled={index === criteriaConfig.length - 1}
+                            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Mover para baixo"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => removeCriterion(index)}
+                            className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Remover campo"
+                            disabled={criteriaConfig.length <= 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <Button type="button" onClick={addCriterion} variant="secondary" className="mt-4">
-                  <PlusCircle className="h-4 w-4 mr-2" />
-                  Adicionar Critério
-                </Button>
+                <div className="flex gap-3 mt-4">
+                  <Button type="button" onClick={addCriterion} variant="secondary">
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    Adicionar Campo
+                  </Button>
+                  <Button 
+                    type="button" 
+                    onClick={importExampleTemplates} 
+                    variant="secondary"
+                    className="!bg-blue-100 !text-blue-700 hover:!bg-blue-200"
+                    disabled={isSaving}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Importar Modelos de Exemplo
+                  </Button>
+                </div>
               </div>
               
               <div className="flex justify-end gap-4">
