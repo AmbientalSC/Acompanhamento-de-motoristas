@@ -28,7 +28,7 @@ Sistema web para avaliação e acompanhamento de performance de motoristas, dese
 
 1. Clone o repositório:
 ```bash
-git clone https://github.com/seu-usuario/Acompanhamento-de-motoristas.git
+git clone https://github.com/AmbientalSC/Acompanhamento-de-motoristas.git
 cd Acompanhamento-de-motoristas
 ```
 
@@ -61,7 +61,7 @@ git push origin main
    - Fazer build do projeto
    - Criar/atualizar a branch `gh-pages` com os arquivos de produção
    - Deployar para o GitHub Pages
-   - Disponibilizar em: `https://seu-usuario.github.io/Acompanhamento-de-motoristas/`
+   - Disponibilizar em: `https://AmbientalSC.github.io/Acompanhamento-de-motoristas/`
 
 ### Deploy Manual
 
@@ -91,14 +91,6 @@ Acompanhamento-de-motoristas/
 - `npm run dev` - Executa o servidor de desenvolvimento
 - `npm run build` - Gera o build de produção
 - `npm run preview` - Preview do build de produção
-
-## 🌐 Acesso Online
-
-O projeto está disponível em: [https://seu-usuario.github.io/Acompanhamento-de-motoristas/](https://seu-usuario.github.io/Acompanhamento-de-motoristas/)
-
-## 📝 Configuração do Firebase
-
-O projeto já está configurado com Firebase. As configurações estão em `firebase.ts`.
 
 ## 🤝 Contribuição
 
