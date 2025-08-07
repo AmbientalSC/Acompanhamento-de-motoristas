@@ -9,8 +9,11 @@ import {
   orderBy,
   Timestamp 
 } from 'firebase/firestore';
-import { db } from '../firebase';
-import type { Evaluation, EvaluationTemplate } from '../types';
+import { 
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { db, auth } from '../firebase';
+import type { Evaluation, EvaluationTemplate, User } from '../types';
 
 // Serviços para Modelos (Templates)
 export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
@@ -19,10 +22,12 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
     const templates: EvaluationTemplate[] = [];
     
     querySnapshot.forEach((doc) => {
+      const data = doc.data();
       templates.push({
         id: doc.id,
-        name: doc.data().name,
-        criteria: doc.data().criteria,
+        name: data.name,
+        criteria: data.criteria || [], // Compatibilidade com dados antigos
+        criteriaConfig: data.criteriaConfig || undefined, // Nova estrutura
       });
     });
     
@@ -35,16 +40,24 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
 
 export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>): Promise<EvaluationTemplate> => {
   try {
-    const docRef = await addDoc(collection(db, 'templates'), {
+    const dataToSave = {
       name: templateData.name,
-      criteria: templateData.criteria,
+      criteria: templateData.criteria || [], // Compatibilidade
       createdAt: Timestamp.now(),
-    });
+    };
+    
+    // Adicionar criteriaConfig se existir
+    if (templateData.criteriaConfig) {
+      (dataToSave as any).criteriaConfig = templateData.criteriaConfig;
+    }
+    
+    const docRef = await addDoc(collection(db, 'templates'), dataToSave);
     
     return {
       id: docRef.id,
       name: templateData.name,
-      criteria: templateData.criteria,
+      criteria: templateData.criteria || [],
+      criteriaConfig: templateData.criteriaConfig,
     };
   } catch (error) {
     console.error('Erro ao salvar modelo:', error);
@@ -55,16 +68,25 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
 export const updateTemplate = async (templateId: string, templateData: Omit<EvaluationTemplate, 'id'>): Promise<EvaluationTemplate> => {
   try {
     const templateRef = doc(db, 'templates', templateId);
-    await updateDoc(templateRef, {
+    
+    const dataToUpdate = {
       name: templateData.name,
-      criteria: templateData.criteria,
+      criteria: templateData.criteria || [], // Compatibilidade
       updatedAt: Timestamp.now(),
-    });
+    };
+    
+    // Adicionar criteriaConfig se existir
+    if (templateData.criteriaConfig) {
+      (dataToUpdate as any).criteriaConfig = templateData.criteriaConfig;
+    }
+    
+    await updateDoc(templateRef, dataToUpdate);
     
     return {
       id: templateId,
       name: templateData.name,
-      criteria: templateData.criteria,
+      criteria: templateData.criteria || [],
+      criteriaConfig: templateData.criteriaConfig,
     };
   } catch (error) {
     console.error('Erro ao atualizar modelo:', error);
@@ -171,5 +193,122 @@ export const deleteBranch = async (branchName: string): Promise<void> => {
   } catch (error) {
     console.error('Erro ao excluir filial:', error);
     throw new Error('Falha ao excluir filial');
+  }
+};
+
+// Serviços para Usuários
+export const getUsers = async (): Promise<User[]> => {
+  try {
+    const q = query(collection(db, 'users'), orderBy('name', 'asc'));
+    const querySnapshot = await getDocs(q);
+    const users: User[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      users.push({
+        id: doc.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        position: data.position,
+        branches: data.branches || [],
+        isActive: data.isActive !== false, // default true
+        createdAt: data.createdAt?.toMillis() || Date.now(),
+        updatedAt: data.updatedAt?.toMillis(),
+      });
+    });
+    
+    return users;
+  } catch (error) {
+    console.error('Erro ao buscar usuários:', error);
+    throw new Error('Falha ao carregar usuários');
+  }
+};
+
+export const saveUser = async (userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'> & { password: string }): Promise<User> => {
+  try {
+    // Criar usuário no Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+    const authUser = userCredential.user;
+    
+    // Salvar perfil do usuário no Firestore
+    const docRef = await addDoc(collection(db, 'users'), {
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      position: userData.position,
+      branches: userData.branches,
+      isActive: userData.isActive,
+      authUID: authUser.uid, // Vincular com o UID do Firebase Auth
+      createdAt: Timestamp.now(),
+    });
+    
+    return {
+      id: docRef.id,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      position: userData.position,
+      branches: userData.branches,
+      isActive: userData.isActive,
+      createdAt: Date.now(),
+    };
+  } catch (error) {
+    console.error('Erro ao salvar usuário:', error);
+    if (error instanceof Error) {
+      throw new Error(`Falha ao criar usuário: ${error.message}`);
+    }
+    throw new Error('Falha ao salvar usuário');
+  }
+};
+
+export const updateUser = async (userId: string, userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'> & { password?: string }): Promise<User> => {
+  try {
+    // Atualizar dados no Firestore
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      position: userData.position,
+      branches: userData.branches,
+      isActive: userData.isActive,
+      updatedAt: Timestamp.now(),
+    });
+    
+    // Se senha foi fornecida, atualizar no Firebase Auth
+    if (userData.password && userData.password.trim()) {
+      // Nota: Para atualizar a senha, o usuário precisa estar autenticado
+      // Em um cenário real, isso seria feito de forma mais segura
+      console.log('Senha será atualizada para o usuário:', userData.email);
+      // TODO: Implementar atualização de senha de forma segura
+    }
+    
+    return {
+      id: userId,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      position: userData.position,
+      branches: userData.branches,
+      isActive: userData.isActive,
+      createdAt: Date.now(), // Será sobrescrito pelo valor real
+      updatedAt: Date.now(),
+    };
+  } catch (error) {
+    console.error('Erro ao atualizar usuário:', error);
+    if (error instanceof Error) {
+      throw new Error(`Falha ao atualizar usuário: ${error.message}`);
+    }
+    throw new Error('Falha ao atualizar usuário');
+  }
+};
+
+export const deleteUser = async (userId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (error) {
+    console.error('Erro ao excluir usuário:', error);
+    throw new Error('Falha ao excluir usuário');
   }
 }; 

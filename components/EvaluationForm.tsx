@@ -78,10 +78,20 @@ const EvaluationForm: React.FC = () => {
     const template = templates.find(t => t.id === templateId);
     if (template) {
       setSelectedTemplate(template);
-      const initialScores = template.criteria.reduce((acc, criterion) => {
+      
+      let criteriaNames: string[];
+      if (template.criteriaConfig) {
+        criteriaNames = template.criteriaConfig.map(c => c.name);
+      } else {
+        // Compatibilidade com templates antigos
+        criteriaNames = template.criteria;
+      }
+      
+      const initialScores = criteriaNames.reduce((acc, criterion) => {
         acc[criterion] = 5;
         return acc;
       }, {} as Record<string, number>);
+      
       setScores(initialScores);
       setFormStep(2);
     }
@@ -97,9 +107,19 @@ const EvaluationForm: React.FC = () => {
   }, []);
 
   const averageScore = useMemo(() => {
-    if (!selectedTemplate || selectedTemplate.criteria.length === 0) return 0;
+    if (!selectedTemplate) return 0;
+    
+    let criteriaCount: number;
+    if (selectedTemplate.criteriaConfig) {
+      criteriaCount = selectedTemplate.criteriaConfig.length;
+    } else {
+      criteriaCount = selectedTemplate.criteria.length;
+    }
+    
+    if (criteriaCount === 0) return 0;
+    
     const total = Object.values(scores).reduce((sum, score) => sum + score, 0);
-    const average = total / selectedTemplate.criteria.length;
+    const average = total / criteriaCount;
     return isNaN(average) ? 0 : average;
   }, [scores, selectedTemplate]);
 
@@ -230,16 +250,15 @@ const EvaluationForm: React.FC = () => {
         <div className="p-6">
           <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho da Avaliação</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Input label="Matrícula" name="matricula" value={formData.matricula} onChange={handleInputChange} required />
+            <Input label="Matrícula" name="matricula" value={formData.matricula} onChange={handleInputChange} />
             <Input label="Motorista" name="motorista" value={formData.motorista} onChange={handleInputChange} required />
-            <Input label="Setor Acompanhado" name="setor" value={formData.setor} onChange={handleInputChange} required />
+            <Input label="Setor Acompanhado" name="setor" value={formData.setor} onChange={handleInputChange} />
             <Input label="VT (Veículo)" name="vt" value={formData.vt} onChange={handleInputChange} required />
             <Select
               label="Turno"
               name="turno"
               value={formData.turno}
               onChange={handleInputChange}
-              required
             >
               <option value="">Selecione o turno</option>
               <option value="Manhã">Manhã</option>
@@ -269,14 +288,26 @@ const EvaluationForm: React.FC = () => {
             <div className="p-6">
               <h3 className="text-xl font-bold text-brand-dark mb-6">Critérios de Avaliação</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                {selectedTemplate.criteria.map(criterion => (
-                  <RatingSlider
-                    key={criterion}
-                    label={criterion}
-                    value={scores[criterion] ?? 5}
-                    onChange={(value) => handleScoreChange(criterion, value)}
-                  />
-                ))}
+                {selectedTemplate.criteriaConfig ? (
+                  selectedTemplate.criteriaConfig.map(criterion => (
+                    <RatingSlider
+                      key={criterion.name}
+                      label={criterion.name + (criterion.required ? ' *' : '')}
+                      value={scores[criterion.name] ?? 5}
+                      onChange={(value) => handleScoreChange(criterion.name, value)}
+                    />
+                  ))
+                ) : (
+                  // Compatibilidade com templates antigos
+                  selectedTemplate.criteria.map(criterion => (
+                    <RatingSlider
+                      key={criterion}
+                      label={criterion}
+                      value={scores[criterion] ?? 5}
+                      onChange={(value) => handleScoreChange(criterion, value)}
+                    />
+                  ))
+                )}
               </div>
             </div>
           </Card>

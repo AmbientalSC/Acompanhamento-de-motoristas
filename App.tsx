@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ClipboardList, LayoutDashboard, Truck, FileText, PieChart, LogOut, User, Menu, X } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, FileText, PieChart, LogOut, User, Menu, X } from 'lucide-react';
 import EvaluationForm from './components/EvaluationForm';
 import DriverDashboard from './components/DriverDashboard';
 import TemplateManager from './components/TemplateManager';
@@ -13,7 +13,7 @@ type Tab = 'form' | 'driver-dashboard' | 'general-dashboard' | 'templates';
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('general-dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, canManageSystem } = useAuth();
 
   const renderContent = () => {
     switch (activeTab) {
@@ -142,12 +142,14 @@ const App: React.FC = () => {
               icon={<LayoutDashboard className="h-4 w-4 sm:h-5 sm:w-5" />}
               onClick={() => handleTabClick('driver-dashboard')}
             />
-            <TabButton 
-              tabName="templates" 
-              label="Gerenciar" 
-              icon={<FileText className="h-4 w-4 sm:h-5 sm:w-5" />}
-              onClick={() => handleTabClick('templates')}
-            />
+            {canManageSystem && (
+              <TabButton 
+                tabName="templates" 
+                label="Gerenciar" 
+                icon={<FileText className="h-4 w-4 sm:h-5 sm:w-5" />}
+                onClick={() => handleTabClick('templates')}
+              />
+            )}
           </nav>
         </div>
         
