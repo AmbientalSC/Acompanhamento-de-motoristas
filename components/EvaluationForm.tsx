@@ -120,21 +120,11 @@ const EvaluationForm: React.FC = () => {
   };
 
   const handleScoreChange = useCallback((criterion: string, value: number) => {
-    console.log(`handleScoreChange [${criterion}] setting score:`, value);
-    setScores(prev => {
-      const newScores = { ...prev, [criterion]: value };
-      console.log('New scores state:', newScores);
-      return newScores;
-    });
+    setScores(prev => ({ ...prev, [criterion]: value }));
   }, []);
 
   const handleFieldChange = useCallback((fieldId: string, value: any) => {
-    console.log(`handleFieldChange [${fieldId}] setting value:`, value);
-    setFieldValues(prev => {
-      const newFieldValues = { ...prev, [fieldId]: value };
-      console.log('New fieldValues state:', newFieldValues);
-      return newFieldValues;
-    });
+    setFieldValues(prev => ({ ...prev, [fieldId]: value }));
   }, []);
 
   const averageScore = useMemo(() => {
@@ -352,15 +342,12 @@ const EvaluationForm: React.FC = () => {
                       ? (scores[criterion.id] ?? 5) 
                       : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''));
                     
-                    console.log(`EvaluationForm rendering [${criterion.id}] type: ${criterion.type}, value:`, fieldValue);
-                    
                     return (
                       <DynamicField
                         key={criterion.id}
                         criterion={criterion}
                         value={fieldValue}
                         onChange={(value) => {
-                          console.log(`EvaluationForm onChange [${criterion.id}] type: ${criterion.type}, new value:`, value);
                           if (criterion.type === 'rating') {
                             handleScoreChange(criterion.id, value);
                           } else {
