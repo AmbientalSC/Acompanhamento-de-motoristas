@@ -38,6 +38,23 @@ const useIsMobile = () => {
   return isMobile;
 };
 
+// Hook para detectar telas extra pequenas
+const useIsExtraSmall = () => {
+  const [isExtraSmall, setIsExtraSmall] = useState(false);
+
+  useEffect(() => {
+    const checkIsExtraSmall = () => {
+      setIsExtraSmall(window.innerWidth < 480);
+    };
+
+    checkIsExtraSmall();
+    window.addEventListener('resize', checkIsExtraSmall);
+    return () => window.removeEventListener('resize', checkIsExtraSmall);
+  }, []);
+
+  return isExtraSmall;
+};
+
 const DriverDashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +63,7 @@ const DriverDashboard: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('evaluations');
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; date: string } | null>(null);
   const isMobile = useIsMobile();
+  const isExtraSmall = useIsExtraSmall();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -391,66 +409,86 @@ const DriverDashboard: React.FC = () => {
 
                   <div className="mb-8">
                     <h4 className="text-lg font-semibold text-brand-dark mb-4">Notas por Critério</h4>
-                    <div className={`w-full ${isMobile ? 'h-[700px] overflow-x-auto' : 'h-[600px]'}`}>
-                      <ResponsiveContainer width={isMobile ? Math.max(800, summaryChartData.length * 35) : "100%"} height="100%">
-                          <BarChart 
-                            layout="vertical" 
-                            data={summaryChartData} 
-                            margin={{ 
-                              top: 20, 
-                              right: isMobile ? 50 : 30, 
-                              left: isMobile ? 180 : 200, 
-                              bottom: 20 
-                            }}
-                          >
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis 
-                                type="number" 
-                                domain={[0, 10]} 
-                                ticks={[0, 2, 4, 6, 8, 10]}
-                                fontSize={isMobile ? 10 : 12}
-                              />
-                              <YAxis 
-                                type="category" 
-                                dataKey="name" 
-                                width={isMobile ? 180 : 200}
-                                tick={{
-                                  fontSize: isMobile ? 8 : 11, 
-                                  textAnchor: 'end',
-                                  width: isMobile ? 170 : 190
-                                }} 
-                                interval={0}
-                                tickFormatter={(value: string) => {
-                                  // Para mobile, truncar texto muito longo e quebrar em linhas
-                                  if (isMobile) {
-                                    if (value.length > 25) {
-                                      const words = value.split(' ');
-                                      const lines: string[] = [];
-                                      let currentLine = '';
-                                      
-                                      words.forEach((word: string) => {
-                                        if ((currentLine + ' ' + word).length <= 20) {
-                                          currentLine += (currentLine ? ' ' : '') + word;
-                                        } else {
-                                          if (currentLine) lines.push(currentLine);
-                                          currentLine = word;
-                                        }
-                                      });
-                                      if (currentLine) lines.push(currentLine);
-                                      
-                                      // Máximo 2 linhas para não ficar muito alto
-                                      return lines.slice(0, 2).join('\n');
+                    
+                    {/* Visualização em Cards para mobile muito pequeno */}
+                    {isExtraSmall ? (
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                        {summaryChartData.map((item, index) => (
+                          <div key={index} className="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
+                            <div className="flex-1 min-w-0">
+                              <h5 className="text-xs font-medium text-gray-700 truncate" title={item.name}>
+                                {item.name}
+                              </h5>
+                            </div>
+                            <div className="ml-3 flex items-center">
+                              <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                                <div 
+                                  className="bg-blue-500 h-2 rounded-full" 
+                                  style={{ width: `${(item.Nota / 10) * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm font-semibold text-gray-900 w-8 text-right">
+                                {item.Nota.toFixed(1)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      /* Gráfico normal para desktop e mobile maior */
+                      <div className="w-full h-[600px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart 
+                              layout="vertical" 
+                              data={summaryChartData} 
+                              margin={{ 
+                                top: 20, 
+                                right: 30, 
+                                left: isMobile ? 150 : 200, 
+                                bottom: 20 
+                              }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                  type="number" 
+                                  domain={[0, 10]} 
+                                  ticks={[0, 2, 4, 6, 8, 10]}
+                                  fontSize={isMobile ? 10 : 12}
+                                />
+                                <YAxis 
+                                  type="category" 
+                                  dataKey="name" 
+                                  width={isMobile ? 150 : 200}
+                                  tick={{
+                                    fontSize: isMobile ? 8 : 11, 
+                                    textAnchor: 'end'
+                                  }} 
+                                  interval={0}
+                                  tickFormatter={(value: string) => {
+                                    // Truncar texto para caber sem scroll
+                                    if (isMobile) {
+                                      if (value.length > 18) {
+                                        return value.substring(0, 15) + '...';
+                                      }
+                                    } else {
+                                      if (value.length > 25) {
+                                        return value.substring(0, 22) + '...';
+                                      }
                                     }
-                                  }
-                                  return value;
-                                }}
-                              />
-                              <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }}/>
-                              <Legend />
-                              <Bar dataKey="Nota" fill="#3B82F6" />
-                          </BarChart>
-                      </ResponsiveContainer>
-                    </div>
+                                    return value;
+                                  }}
+                                />
+                                <Tooltip 
+                                  contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }}
+                                  labelFormatter={(label) => `Critério: ${label}`}
+                                  formatter={(value: number) => [`${value.toFixed(1)}`, 'Nota']}
+                                />
+                                <Legend />
+                                <Bar dataKey="Nota" fill="#3B82F6" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
                   
                   <div>
