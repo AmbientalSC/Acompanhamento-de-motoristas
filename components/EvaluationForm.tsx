@@ -120,11 +120,21 @@ const EvaluationForm: React.FC = () => {
   };
 
   const handleScoreChange = useCallback((criterion: string, value: number) => {
-    setScores(prev => ({ ...prev, [criterion]: value }));
+    console.log(`handleScoreChange [${criterion}] setting score:`, value);
+    setScores(prev => {
+      const newScores = { ...prev, [criterion]: value };
+      console.log('New scores state:', newScores);
+      return newScores;
+    });
   }, []);
 
   const handleFieldChange = useCallback((fieldId: string, value: any) => {
-    setFieldValues(prev => ({ ...prev, [fieldId]: value }));
+    console.log(`handleFieldChange [${fieldId}] setting value:`, value);
+    setFieldValues(prev => {
+      const newFieldValues = { ...prev, [fieldId]: value };
+      console.log('New fieldValues state:', newFieldValues);
+      return newFieldValues;
+    });
   }, []);
 
   const averageScore = useMemo(() => {
@@ -337,20 +347,29 @@ const EvaluationForm: React.FC = () => {
               <h3 className="text-xl font-bold text-brand-dark mb-6">Critérios de Avaliação</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 {selectedTemplate.criteriaConfig ? (
-                  selectedTemplate.criteriaConfig.map(criterion => (
-                    <DynamicField
-                      key={criterion.id}
-                      criterion={criterion}
-                      value={criterion.type === 'rating' ? (scores[criterion.id] ?? 5) : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''))}
-                      onChange={(value) => {
-                        if (criterion.type === 'rating') {
-                          handleScoreChange(criterion.id, value);
-                        } else {
-                          handleFieldChange(criterion.id, value);
-                        }
-                      }}
-                    />
-                  ))
+                  selectedTemplate.criteriaConfig.map(criterion => {
+                    const fieldValue = criterion.type === 'rating' 
+                      ? (scores[criterion.id] ?? 5) 
+                      : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''));
+                    
+                    console.log(`EvaluationForm rendering [${criterion.id}] type: ${criterion.type}, value:`, fieldValue);
+                    
+                    return (
+                      <DynamicField
+                        key={criterion.id}
+                        criterion={criterion}
+                        value={fieldValue}
+                        onChange={(value) => {
+                          console.log(`EvaluationForm onChange [${criterion.id}] type: ${criterion.type}, new value:`, value);
+                          if (criterion.type === 'rating') {
+                            handleScoreChange(criterion.id, value);
+                          } else {
+                            handleFieldChange(criterion.id, value);
+                          }
+                        }}
+                      />
+                    );
+                  })
                 ) : (
                   // Compatibilidade com templates antigos
                   selectedTemplate.criteria.map(criterion => (
