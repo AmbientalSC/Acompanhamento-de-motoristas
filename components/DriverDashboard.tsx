@@ -354,28 +354,89 @@ const DriverDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Informações do Cabeçalho da Avaliação */}
+                  <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Informações da Avaliação</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-600">Motorista:</span>
+                        <p className="font-medium text-gray-900">{selectedEvaluation.motorista}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Filial:</span>
+                        <p className="font-medium text-gray-900">{selectedEvaluation.filial}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Turno:</span>
+                        <p className="font-medium text-gray-900">{selectedEvaluation.turno}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Setor:</span>
+                        <p className="font-medium text-gray-900">{selectedEvaluation.setor}</p>
+                      </div>
+                      {selectedEvaluation.matricula && (
+                        <div>
+                          <span className="text-gray-600">Matrícula:</span>
+                          <p className="font-medium text-gray-900">{selectedEvaluation.matricula}</p>
+                        </div>
+                      )}
+                      {selectedEvaluation.vt && (
+                        <div>
+                          <span className="text-gray-600">Viatura:</span>
+                          <p className="font-medium text-gray-900">{selectedEvaluation.vt}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="mb-8">
                     <h4 className="text-lg font-semibold text-brand-dark mb-4">Notas por Critério</h4>
-                    <div className="h-[400px] sm:h-[500px] w-full overflow-x-auto">
+                    <div className="h-[500px] sm:h-[600px] w-full overflow-x-auto">
                       <ResponsiveContainer width="100%" height="100%">
                           <BarChart 
                             layout="vertical" 
                             data={summaryChartData} 
                             margin={{ 
-                              top: 5, 
-                              right: 10, 
-                              left: isMobile ? 80 : 150, 
-                              bottom: 5 
+                              top: 20, 
+                              right: 30, 
+                              left: isMobile ? 120 : 200, 
+                              bottom: 20 
                             }}
                           >
                               <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} />
+                              <XAxis 
+                                type="number" 
+                                domain={[0, 10]} 
+                                ticks={[0, 2, 4, 6, 8, 10]}
+                                fontSize={12}
+                              />
                               <YAxis 
                                 type="category" 
                                 dataKey="name" 
-                                width={isMobile ? 80 : 150}
-                                tick={{fontSize: isMobile ? 10 : 12}} 
-                                interval={0} 
+                                width={isMobile ? 120 : 200}
+                                tick={{fontSize: isMobile ? 9 : 11, textAnchor: 'end'}} 
+                                interval={0}
+                                tickFormatter={(value: string) => {
+                                  // Quebrar textos longos em múltiplas linhas para mobile
+                                  if (isMobile && value.length > 15) {
+                                    const words = value.split(' ');
+                                    const lines: string[] = [];
+                                    let currentLine = '';
+                                    
+                                    words.forEach((word: string) => {
+                                      if ((currentLine + word).length <= 15) {
+                                        currentLine += (currentLine ? ' ' : '') + word;
+                                      } else {
+                                        if (currentLine) lines.push(currentLine);
+                                        currentLine = word;
+                                      }
+                                    });
+                                    if (currentLine) lines.push(currentLine);
+                                    
+                                    return lines.join('\n');
+                                  }
+                                  return value;
+                                }}
                               />
                               <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }}/>
                               <Legend />
