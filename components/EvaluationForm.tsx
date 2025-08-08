@@ -163,6 +163,12 @@ const EvaluationForm: React.FC = () => {
     if (!selectedTemplate) return;
     setIsSaving(true);
     
+    console.log('Iniciando submit do formulário');
+    console.log('Template selecionado:', selectedTemplate);
+    console.log('Dados do formulário:', formData);
+    console.log('Scores:', scores);
+    console.log('Field values:', fieldValues);
+    
     const evaluationToSave = {
         ...formData,
         scores,
@@ -175,6 +181,8 @@ const EvaluationForm: React.FC = () => {
                    `Formulário ${selectedTemplate.name}` : 
                    formData.motorista,
     };
+
+    console.log('Dados que serão salvos:', evaluationToSave);
 
     try {
       await saveEvaluation(evaluationToSave);

@@ -116,13 +116,21 @@ export const deleteTemplate = async (templateId: string): Promise<void> => {
 // Serviços para Avaliações
 export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'timestamp'>): Promise<void> => {
   try {
-    await addDoc(collection(db, 'evaluations'), {
+    console.log('Tentando salvar avaliação:', evaluationData);
+    
+    const dataToSave = {
       ...evaluationData,
       timestamp: Timestamp.now(),
       createdAt: Timestamp.now(),
-    });
+    };
+    
+    console.log('Dados que serão salvos:', dataToSave);
+    
+    const docRef = await addDoc(collection(db, 'evaluations'), dataToSave);
+    console.log('Avaliação salva com sucesso, ID:', docRef.id);
   } catch (error) {
     console.error('Erro ao salvar avaliação:', error);
+    console.error('Detalhes do erro:', error);
     throw new Error('Falha ao salvar avaliação');
   }
 };

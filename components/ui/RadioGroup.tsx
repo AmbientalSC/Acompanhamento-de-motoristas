@@ -34,8 +34,8 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
       )}
       
       <div className="space-y-2">
-        {options.map((option) => (
-          <label key={option.value} className="flex items-center space-x-2 cursor-pointer">
+        {options.map((option, index) => (
+          <label key={`${name}-${option.value}-${index}`} className="flex items-center space-x-2 cursor-pointer">
             <input
               type="radio"
               name={name}
