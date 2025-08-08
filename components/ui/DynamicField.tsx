@@ -57,13 +57,17 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
         );
 
       case 'radio':
+        console.log(`DynamicField [${criterion.id}] rendering radio with value:`, value, 'options:', options);
         return (
           <RadioGroup
             label={name}
             name={criterion.id}
             options={options || []}
             value={value || ''}
-            onChange={onChange}
+            onChange={(newValue) => {
+              console.log(`DynamicField [${criterion.id}] onChange called with:`, newValue);
+              onChange(newValue);
+            }}
             required={required}
             description={description}
           />
