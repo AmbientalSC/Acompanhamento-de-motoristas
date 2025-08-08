@@ -47,7 +47,7 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
       
       <div className="space-y-2">
         {validOptions.map((option, index) => {
-          const uniqueId = `${name}-${index}-${Date.now()}`;
+          const uniqueId = `radio-${name}-${index}`;
           const isSelected = value === option.value;
           
           return (
@@ -55,7 +55,7 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
               <input
                 type="radio"
                 id={uniqueId}
-                name={`radio-${name}`}
+                name={`radiogroup-${name}`}
                 value={option.value}
                 checked={isSelected}
                 onChange={() => handleChange(option.value)}
