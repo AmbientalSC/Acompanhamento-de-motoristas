@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, AlertTriangle, FileText, Calendar, User, Building, Search, Trash2 } from 'lucide-react';
+import { Loader2, AlertTriangle, FileText, Calendar, User, Building, Search, Trash2, ChevronDown } from 'lucide-react';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
@@ -22,6 +22,7 @@ const FormsViewer: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   // Função para buscar o nome real do campo - compatível com dados antigos (IDs) e novos (nomes)
   const getFieldName = (fieldKey: string, templateId?: string): string => {
@@ -65,6 +66,18 @@ const FormsViewer: React.FC = () => {
       console.error('Erro ao excluir formulário:', error);
       alert('Erro ao excluir formulário. Tente novamente.');
     }
+  };
+
+  const toggleCardExpansion = (formId: string) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(formId)) {
+        newSet.delete(formId);
+      } else {
+        newSet.add(formId);
+      }
+      return newSet;
+    });
   };
 
   const handleCancelDelete = () => {
@@ -187,103 +200,136 @@ const FormsViewer: React.FC = () => {
 
       {/* Lista de Formulários */}
       <div className="grid gap-4">
-        {filteredForms.map((form) => (
-          <Card key={form.id} className="hover:shadow-md transition-shadow relative group">
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-brand-dark flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-brand-primary" />
-                    {form.templateName}
-                  </h3>
-                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                    {form.motorista && (
+        {filteredForms.map((form) => {
+          const isExpanded = expandedCards.has(form.id);
+          
+          return (
+            <Card key={form.id} className="hover:shadow-md transition-shadow relative group">
+              <div className="p-6">
+                {/* Cabeçalho clicável para expandir/contrair */}
+                <div 
+                  className="flex justify-between items-start mb-4 cursor-pointer"
+                  onClick={() => toggleCardExpansion(form.id)}
+                >
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-brand-dark flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-brand-primary" />
+                      {form.templateName}
+                      <ChevronDown 
+                        className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </h3>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                      {form.motorista && (
+                        <span className="flex items-center gap-1">
+                          <User className="h-4 w-4" />
+                          {form.motorista}
+                        </span>
+                      )}
+                      {form.filial && (
+                        <span className="flex items-center gap-1">
+                          <Building className="h-4 w-4" />
+                          {form.filial}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
-                        <User className="h-4 w-4" />
-                        {form.motorista}
+                        <Calendar className="h-4 w-4" />
+                        {formatDate(form.data)}
                       </span>
-                    )}
-                    {form.filial && (
-                      <span className="flex items-center gap-1">
-                        <Building className="h-4 w-4" />
-                        {form.filial}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-4 w-4" />
-                      {formatDate(form.data)}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="text-xs text-gray-500">
+                      ID: {form.id.slice(-8)}
+                    </div>
+                    {/* Botão de excluir - aparece apenas no hover */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation(); // Impede que o clique expanda o card
+                        handleDeleteClick(form.id, form.templateName || 'formulário');
+                      }}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200"
+                      title="Excluir formulário"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Prévia compacta quando minimizado */}
+                {!isExpanded && form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
+                  <div className="mt-3 text-sm text-gray-600">
+                    <span className="bg-gray-100 px-2 py-1 rounded text-xs">
+                      {Object.keys(form.fieldValues).length} campos preenchidos
+                    </span>
+                    <span className="text-gray-400 ml-2">
+                      Clique para expandir e ver detalhes
                     </span>
                   </div>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <div className="text-xs text-gray-500">
-                    ID: {form.id.slice(-8)}
-                  </div>
-                  {/* Botão de excluir - aparece apenas no hover */}
-                  <button
-                    onClick={() => handleDeleteClick(form.id, form.templateName || 'formulário')}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200"
-                    title="Excluir formulário"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+                )}
 
-              {/* Exibir campos do formulário */}
-              {form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
-                <div className="mt-4 border-t pt-4">
-                  <h4 className="font-medium text-gray-700 mb-3">Dados Preenchidos:</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {Object.entries(form.fieldValues).map(([fieldKey, value]) => (
-                      <div key={fieldKey} className="bg-gray-50 p-3 rounded">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          {getFieldName(fieldKey, form.templateId)}
-                        </label>
-                        <div className="text-sm text-gray-800">
-                          {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
+                {/* Conteúdo expandido - campos do formulário */}
+                {isExpanded && (
+                  <>
+                    {/* Exibir campos do formulário */}
+                    {form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
+                      <div className="mt-4 border-t pt-4">
+                        <h4 className="font-medium text-gray-700 mb-3">Dados Preenchidos:</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {Object.entries(form.fieldValues).map(([fieldKey, value]) => (
+                            <div key={fieldKey} className="bg-gray-50 p-3 rounded">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                {getFieldName(fieldKey, form.templateId)}
+                              </label>
+                              <div className="text-sm text-gray-800">
+                                {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
 
-              {/* Considerações finais se houver */}
-              {(form.pros || form.contras || form.consideracoes) && (
-                <div className="mt-4 border-t pt-4">
-                  <h4 className="font-medium text-gray-700 mb-3">Observações:</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {form.pros && (
-                      <div className="bg-green-50 p-3 rounded">
-                        <label className="block text-xs font-medium text-green-700 mb-1">
-                          Pontos Positivos
-                        </label>
-                        <div className="text-sm text-green-800">{form.pros}</div>
+                    {/* Considerações finais se houver */}
+                    {(form.pros || form.contras || form.consideracoes) && (
+                      <div className="mt-4 border-t pt-4">
+                        <h4 className="font-medium text-gray-700 mb-3">Observações:</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {form.pros && (
+                            <div className="bg-green-50 p-3 rounded">
+                              <label className="block text-xs font-medium text-green-700 mb-1">
+                                Pontos Positivos
+                              </label>
+                              <div className="text-sm text-green-800">{form.pros}</div>
+                            </div>
+                          )}
+                          {form.contras && (
+                            <div className="bg-red-50 p-3 rounded">
+                              <label className="block text-xs font-medium text-red-700 mb-1">
+                                Pontos Negativos
+                              </label>
+                              <div className="text-sm text-red-800">{form.contras}</div>
+                            </div>
+                          )}
+                          {form.consideracoes && (
+                            <div className="bg-blue-50 p-3 rounded">
+                              <label className="block text-xs font-medium text-blue-700 mb-1">
+                                Considerações Finais
+                              </label>
+                              <div className="text-sm text-blue-800">{form.consideracoes}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
-                    {form.contras && (
-                      <div className="bg-red-50 p-3 rounded">
-                        <label className="block text-xs font-medium text-red-700 mb-1">
-                          Pontos Negativos
-                        </label>
-                        <div className="text-sm text-red-800">{form.contras}</div>
-                      </div>
-                    )}
-                    {form.consideracoes && (
-                      <div className="bg-blue-50 p-3 rounded">
-                        <label className="block text-xs font-medium text-blue-700 mb-1">
-                          Considerações Finais
-                        </label>
-                        <div className="text-sm text-blue-800">{form.consideracoes}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        ))}
+                  </>
+                )}
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {filteredForms.length === 0 && formSubmissions.length > 0 && (
@@ -310,7 +356,7 @@ const FormsViewer: React.FC = () => {
             </div>
             
             <p className="text-gray-600 mb-6">
-              Tem certeza que deseja excluir o formulário "{deleteConfirm.name}"?
+              Tem certeza que deseja excluir o formulário "{deleteConfirm?.name}"?
               <br />
               <span className="text-sm text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
             </p>
