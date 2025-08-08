@@ -35,6 +35,9 @@ const GeneralDashboard: React.FC = () => {
   // Aplicar filtros aos dados
   const filteredEvaluations = useMemo(() => {
     return evaluations.filter(evaluation => {
+      // Excluir formulários puros (sem averageScore) - só incluir avaliações reais
+      if (evaluation.averageScore === undefined || evaluation.averageScore === null) return false;
+      
       // Filtro por filial
       if (filters.filial && evaluation.filial !== filters.filial) return false;
       
@@ -85,7 +88,7 @@ const GeneralDashboard: React.FC = () => {
     // KPIs
     const totalEvaluations = filteredEvaluations.length;
     const uniqueDrivers = new Set(filteredEvaluations.map(e => e.motorista)).size;
-    const overallAverage = filteredEvaluations.reduce((sum, e) => sum + e.averageScore, 0) / totalEvaluations;
+    const overallAverage = filteredEvaluations.reduce((sum, e) => sum + (e.averageScore || 0), 0) / totalEvaluations;
 
     // Criteria Analysis
     const criteriaStats: { [key: string]: { totalScore: number; count: number } } = {};
@@ -114,7 +117,7 @@ const GeneralDashboard: React.FC = () => {
       if (!branchStats[evaluation.filial]) {
         branchStats[evaluation.filial] = { totalScore: 0, count: 0 };
       }
-      branchStats[evaluation.filial].totalScore += evaluation.averageScore;
+      branchStats[evaluation.filial].totalScore += (evaluation.averageScore || 0);
       branchStats[evaluation.filial].count++;
     });
 
@@ -129,7 +132,7 @@ const GeneralDashboard: React.FC = () => {
       if (!shiftStats[evaluation.turno]) {
         shiftStats[evaluation.turno] = { totalScore: 0, count: 0 };
       }
-      shiftStats[evaluation.turno].totalScore += evaluation.averageScore;
+      shiftStats[evaluation.turno].totalScore += (evaluation.averageScore || 0);
       shiftStats[evaluation.turno].count++;
     });
 
@@ -370,8 +373,8 @@ const GeneralDashboard: React.FC = () => {
                      <div className="h-64 sm:h-80">
                          <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie data={analytics.performanceByShift} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value.toFixed(2)}`}>
-                                     {analytics.performanceByShift.map((entry, index) => (
+                                <Pie data={analytics.performanceByShift} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${(value || 0).toFixed(2)}`}>
+                                     {analytics.performanceByShift.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                                     ))}
                                 </Pie>
