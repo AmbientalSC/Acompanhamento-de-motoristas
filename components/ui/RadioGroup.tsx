@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { RadioOption } from '../../types';
 
 interface RadioGroupProps {
@@ -22,6 +22,10 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
   description,
   className = ''
 }) => {
+  // Gerar um ID único e estável para este grupo específico
+  const groupIdRef = useRef(`radiogroup_${name}_${Math.random().toString(36).substr(2, 9)}`);
+  const uniqueGroupName = groupIdRef.current;
+
   // Filtrar opções vazias que podem causar problemas
   const validOptions = options.filter(option => 
     option.value !== '' && option.label !== '' && option.value !== undefined && option.label !== undefined
@@ -29,9 +33,13 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = event.target.value;
-    console.log(`RadioGroup [${name}] input changed to:`, newValue);
+    console.log(`RadioGroup [${name}] changed to:`, newValue, 'previous value:', value);
+    // Prevenir propagação para evitar interferência entre grupos
+    event.stopPropagation();
     onChange(newValue);
   };
+
+  console.log(`RadioGroup [${name}] render - current value:`, value, 'group name:', uniqueGroupName);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -46,15 +54,17 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
       
       <div className="space-y-2">
         {validOptions.map((option, index) => {
-          const inputId = `${name}_${index}_${option.value}`;
+          const inputId = `${uniqueGroupName}_option_${index}`;
           const isSelected = value === option.value;
           
+          console.log(`RadioGroup [${name}] option [${option.value}] checked:`, isSelected);
+          
           return (
-            <div key={`${name}_${index}`} className="flex items-center space-x-2">
+            <div key={`${uniqueGroupName}_${index}`} className="flex items-center space-x-2">
               <input
                 type="radio"
                 id={inputId}
-                name={`radio_${name}`}
+                name={uniqueGroupName}
                 value={option.value}
                 checked={isSelected}
                 onChange={handleInputChange}
