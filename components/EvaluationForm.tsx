@@ -163,10 +163,18 @@ const EvaluationForm: React.FC = () => {
     if (!selectedTemplate) return;
     setIsSaving(true);
     
+    // Converter IDs dos campos em nomes legíveis para salvar no Firebase
+    const fieldValuesWithNames: Record<string, any> = {};
+    Object.entries(fieldValues).forEach(([fieldId, value]) => {
+      const criterion = selectedTemplate.criteriaConfig?.find(c => c.id === fieldId);
+      const fieldName = criterion ? criterion.name : fieldId;
+      fieldValuesWithNames[fieldName] = value;
+    });
+    
     const evaluationToSave: any = {
         ...formData,
         scores,
-        fieldValues,
+        fieldValues: fieldValuesWithNames,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
         // Para formulários sem cabeçalho, garantir que motorista seja uma string descritiva

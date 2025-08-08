@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, AlertTriangle, FileText, Calendar, User, Building, Search, Trash2 } from 'lucide-react';
-import type { Evaluation } from '../types';
-import { getEvaluations, deleteEvaluation } from '../services/firebaseService';
+import type { Evaluation, EvaluationTemplate } from '../types';
+import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
 import Select from './ui/Select';
 import Input from './ui/Input';
@@ -16,17 +16,38 @@ const formatDate = (dateString: string) => {
 
 const FormsViewer: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
 
+  // Função para buscar o nome real do campo - compatível com dados antigos (IDs) e novos (nomes)
+  const getFieldName = (fieldKey: string, templateId?: string): string => {
+    if (!templateId) return fieldKey;
+    
+    const template = templates.find(t => t.id === templateId);
+    if (!template || !template.criteriaConfig) return fieldKey;
+    
+    // Se o fieldKey já é um nome de campo (dados novos), retorna ele mesmo
+    const fieldByName = template.criteriaConfig.find(c => c.name === fieldKey);
+    if (fieldByName) return fieldKey;
+    
+    // Se é um ID de campo (dados antigos), busca pelo ID e retorna o nome
+    const fieldById = template.criteriaConfig.find(c => c.id === fieldKey);
+    return fieldById ? fieldById.name : fieldKey;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const data = await getEvaluations();
-      setEvaluations(data);
+      const [evaluationsData, templatesData] = await Promise.all([
+        getEvaluations(),
+        getTemplates()
+      ]);
+      setEvaluations(evaluationsData);
+      setTemplates(templatesData);
       setIsLoading(false);
     };
     fetchData();
@@ -214,10 +235,10 @@ const FormsViewer: React.FC = () => {
                 <div className="mt-4 border-t pt-4">
                   <h4 className="font-medium text-gray-700 mb-3">Dados Preenchidos:</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {Object.entries(form.fieldValues).map(([fieldName, value]) => (
-                      <div key={fieldName} className="bg-gray-50 p-3 rounded">
+                    {Object.entries(form.fieldValues).map(([fieldKey, value]) => (
+                      <div key={fieldKey} className="bg-gray-50 p-3 rounded">
                         <label className="block text-xs font-medium text-gray-600 mb-1">
-                          {fieldName}
+                          {getFieldName(fieldKey, form.templateId)}
                         </label>
                         <div className="text-sm text-gray-800">
                           {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
