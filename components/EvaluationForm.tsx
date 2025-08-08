@@ -163,17 +163,10 @@ const EvaluationForm: React.FC = () => {
     if (!selectedTemplate) return;
     setIsSaving(true);
     
-    console.log('Iniciando submit do formulário');
-    console.log('Template selecionado:', selectedTemplate);
-    console.log('Dados do formulário:', formData);
-    console.log('Scores:', scores);
-    console.log('Field values:', fieldValues);
-    
-    const evaluationToSave = {
+    const evaluationToSave: any = {
         ...formData,
         scores,
         fieldValues,
-        averageScore: selectedTemplate.includeHeader === false ? undefined : averageScore,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
         // Para formulários sem cabeçalho, garantir que motorista seja uma string descritiva
@@ -182,7 +175,10 @@ const EvaluationForm: React.FC = () => {
                    formData.motorista,
     };
 
-    console.log('Dados que serão salvos:', evaluationToSave);
+    // Só adicionar averageScore se o template incluir cabeçalho E houver campos de rating
+    if (selectedTemplate.includeHeader !== false && averageScore !== undefined && averageScore !== null) {
+      evaluationToSave.averageScore = averageScore;
+    }
 
     try {
       await saveEvaluation(evaluationToSave);
