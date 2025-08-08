@@ -41,6 +41,9 @@ export interface EvaluationTemplate {
   name: string;
   criteria: string[]; // Mantido para compatibilidade com dados existentes
   criteriaConfig?: EvaluationCriterion[]; // Nova estrutura com configurações
+  includeHeader?: boolean; // Se deve incluir cabeçalho de avaliação (motorista, filial, etc)
+  includeFinalConsiderations?: boolean; // Se deve incluir campo de considerações finais
+  isFormOnly?: boolean; // Se é apenas um formulário (sem avaliação)
 }
 
 // Representa uma avaliação individual, agora vinculada a um modelo.
@@ -58,7 +61,7 @@ export interface Evaluation {
   templateName: string; // Nome do modelo usado
   scores: Record<string, number>; // Scores dinâmicos baseados nos critérios do modelo
   fieldValues: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
-  averageScore: number;
+  averageScore?: number; // Opcional - undefined para formulários sem cabeçalho
   pros: string;
   contras: string;
   consideracoes: string;

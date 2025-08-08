@@ -28,6 +28,8 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
         name: data.name,
         criteria: data.criteria || [], // Compatibilidade com dados antigos
         criteriaConfig: data.criteriaConfig || undefined, // Nova estrutura
+        includeHeader: data.includeHeader,
+        includeFinalConsiderations: data.includeFinalConsiderations,
       });
     });
     
@@ -43,6 +45,8 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
     const dataToSave = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
+      includeHeader: templateData.includeHeader,
+      includeFinalConsiderations: templateData.includeFinalConsiderations,
       createdAt: Timestamp.now(),
     };
     
@@ -58,6 +62,8 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
       name: templateData.name,
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
+      includeHeader: templateData.includeHeader,
+      includeFinalConsiderations: templateData.includeFinalConsiderations,
     };
   } catch (error) {
     console.error('Erro ao salvar modelo:', error);
@@ -72,6 +78,8 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
     const dataToUpdate = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
+      includeHeader: templateData.includeHeader,
+      includeFinalConsiderations: templateData.includeFinalConsiderations,
       updatedAt: Timestamp.now(),
     };
     
@@ -87,6 +95,8 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
       name: templateData.name,
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
+      includeHeader: templateData.includeHeader,
+      includeFinalConsiderations: templateData.includeFinalConsiderations,
     };
   } catch (error) {
     console.error('Erro ao atualizar modelo:', error);
@@ -125,6 +135,7 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
     
     querySnapshot.forEach((doc) => {
       const data = doc.data();
+      
       evaluations.push({
         id: doc.id,
         matricula: data.matricula,
@@ -137,7 +148,8 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         timestamp: data.timestamp.toMillis(),
         templateId: data.templateId,
         templateName: data.templateName,
-        scores: data.scores,
+        scores: data.scores || {},
+        fieldValues: data.fieldValues || {},
         averageScore: data.averageScore,
         pros: data.pros,
         contras: data.contras,
@@ -149,6 +161,15 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
   } catch (error) {
     console.error('Erro ao buscar avaliações:', error);
     throw new Error('Falha ao carregar avaliações');
+  }
+};
+
+export const deleteEvaluation = async (evaluationId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'evaluations', evaluationId));
+  } catch (error) {
+    console.error('Erro ao excluir avaliação:', error);
+    throw new Error('Falha ao excluir avaliação');
   }
 };
 

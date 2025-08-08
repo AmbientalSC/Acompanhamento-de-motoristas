@@ -1,14 +1,17 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock, FileText } from 'lucide-react';
+import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock, FileText, ClipboardList, Trash2 } from 'lucide-react';
 import type { Evaluation } from '../types';
-import { getEvaluations } from '../services/firebaseService';
+import { getEvaluations, deleteEvaluation } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
 import Card from './ui/Card';
 import Select from './ui/Select';
 import Button from './ui/Button';
+import FormsViewer from './FormsViewer';
+
+type ViewMode = 'evaluations' | 'forms';
 
 const formatDate = (dateString: string) => {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
@@ -18,11 +21,31 @@ const formatDate = (dateString: string) => {
   return `${day}/${month}/${year}`;
 };
 
+// Hook personalizado para detectar mobile
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+};
+
 const DriverDashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<string>('');
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('evaluations');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; date: string } | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -30,9 +53,18 @@ const DriverDashboard: React.FC = () => {
       const data = await getEvaluations();
       setEvaluations(data);
       if (data.length > 0) {
-        const uniqueDrivers = [...new Set(data.map(e => e.motorista))];
+        // Filtrar apenas avaliações verdadeiras para definir o motorista padrão
+        const realEvaluations = data.filter(e => 
+          e.averageScore !== undefined && 
+          e.averageScore !== null && 
+          e.averageScore > 0 && 
+          e.motorista && 
+          e.motorista.trim() !== '' &&
+          !e.motorista.includes('Formulário')
+        );
+        const uniqueDrivers = [...new Set(realEvaluations.map(e => e.motorista))];
         if (uniqueDrivers.length > 0) {
-          setSelectedDriver(data[0].motorista);
+          setSelectedDriver(realEvaluations[0].motorista);
         }
       }
       setIsLoading(false);
@@ -40,13 +72,60 @@ const DriverDashboard: React.FC = () => {
     fetchData();
   }, []);
 
+  const handleDeleteClick = (evaluationId: string, driverName: string, date: string) => {
+    setDeleteConfirm({ id: evaluationId, name: driverName, date });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm) return;
+    
+    try {
+      await deleteEvaluation(deleteConfirm.id);
+      // Atualizar a lista local removendo o item
+      setEvaluations(prev => prev.filter(e => e.id !== deleteConfirm.id));
+      // Se a avaliação excluída era a selecionada, limpar a seleção
+      if (selectedEvaluation?.id === deleteConfirm.id) {
+        setSelectedEvaluation(null);
+      }
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error('Erro ao excluir avaliação:', error);
+      alert('Erro ao excluir avaliação. Tente novamente.');
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteConfirm(null);
+  };
+
   const drivers = useMemo(() => {
-    return [...new Set(evaluations.map(e => e.motorista))];
+    // Filtrar apenas avaliações verdadeiras (com averageScore definido) para o dropdown de motoristas
+    const realEvaluations = evaluations.filter(e => {
+      // Só considera avaliação verdadeira se:
+      // 1. Tem averageScore > 0 
+      // 2. E motorista preenchido que não seja "Formulário..."
+      // 3. E motorista não está vazio
+      const isRealEvaluation = e.averageScore !== undefined && 
+                               e.averageScore !== null && 
+                               e.averageScore > 0 && 
+                               e.motorista && 
+                               e.motorista.trim() !== '' &&
+                               !e.motorista.includes('Formulário');
+      return isRealEvaluation;
+    });
+    return [...new Set(realEvaluations.map(e => e.motorista))];
   }, [evaluations]);
 
   const driverEvaluations = useMemo(() => {
     if (!selectedDriver) return [];
-    return evaluations.filter(e => e.motorista === selectedDriver);
+    // Filtrar apenas avaliações verdadeiras para análise de motoristas
+    return evaluations.filter(e => 
+      e.motorista === selectedDriver && 
+      e.averageScore !== undefined && 
+      e.averageScore !== null && 
+      e.averageScore > 0 &&
+      !e.motorista.includes('Formulário')
+    );
   }, [evaluations, selectedDriver]);
 
   useEffect(() => {
@@ -93,7 +172,9 @@ const DriverDashboard: React.FC = () => {
     }
   };
   
-  const renderAverageStatus = (score: number) => {
+  const renderAverageStatus = (score: number | undefined) => {
+    if (score === undefined || score === null) return null;
+    
     if (score > 7) {
       return <div className="flex items-center gap-2 text-green-600"><CheckCircle className="h-6 w-6" /> <span className="font-bold text-lg">Aprovado ({score.toFixed(2)})</span></div>;
     }
@@ -103,7 +184,9 @@ const DriverDashboard: React.FC = () => {
     return <div className="flex items-center gap-2 text-red-600"><AlertCircle className="h-6 w-6" /> <span className="font-bold text-lg">Reprovado ({score.toFixed(2)})</span></div>;
   };
 
-  const renderStatusBadge = (score: number) => {
+  const renderStatusBadge = (score: number | undefined) => {
+    if (score === undefined || score === null) return null;
+    
     const status = getEvaluationStatus(score);
     const IconComponent = status.icon === 'CheckCircle' ? CheckCircle : 
                          status.icon === 'Clock' ? Clock : AlertCircle;
@@ -139,6 +222,39 @@ const DriverDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Abas principais */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setViewMode('evaluations')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+              viewMode === 'evaluations'
+                ? 'border-brand-primary text-brand-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <BarChartHorizontal className="h-4 w-4 mr-2 inline" />
+            Análise por Motorista
+          </button>
+          <button
+            onClick={() => setViewMode('forms')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+              viewMode === 'forms'
+                ? 'border-brand-primary text-brand-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ClipboardList className="h-4 w-4 mr-2 inline" />
+            Formulários Preenchidos
+          </button>
+        </nav>
+      </div>
+
+      {/* Conteúdo baseado na aba selecionada */}
+      {viewMode === 'forms' ? (
+        <FormsViewer />
+      ) : (
+        <div className="space-y-6">
       <Card>
         <div className="p-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -170,16 +286,16 @@ const DriverDashboard: React.FC = () => {
       </Card>
 
       {selectedDriver && driverEvaluations.length > 0 ? (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          <div className="xl:col-span-1 space-y-4">
+          <div className="lg:col-span-1 space-y-4">
             <h3 className="text-xl font-bold text-brand-dark px-1">Avaliações de {selectedDriver}</h3>
             <div className="max-h-[75vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {driverEvaluations.map(evaluation => (
                 <Card 
                   key={evaluation.id}
                   onClick={() => setSelectedEvaluation(evaluation)}
-                  className={`cursor-pointer transition-all duration-200 ${
+                  className={`cursor-pointer transition-all duration-200 relative group ${
                     selectedEvaluation?.id === evaluation.id 
                       ? 'border-2 border-brand-primary shadow-xl' 
                       : 'border border-gray-200 hover:shadow-lg hover:border-brand-accent'
@@ -194,9 +310,20 @@ const DriverDashboard: React.FC = () => {
                                 {renderStatusBadge(evaluation.averageScore)}
                               </div>
                           </div>
-                          <div className="text-right">
-                              <span className="font-bold text-lg text-brand-primary">{evaluation.averageScore.toFixed(2)}</span>
+                          <div className="text-right relative">
+                              <span className="font-bold text-lg text-brand-primary">{evaluation.averageScore?.toFixed(2) || '0.00'}</span>
                               <p className="text-sm text-gray-500">Média</p>
+                              {/* Botão de excluir - posicionado abaixo da nota */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation(); // Evita trigger do click do card
+                                  handleDeleteClick(evaluation.id, evaluation.motorista, evaluation.data);
+                                }}
+                                className="absolute -bottom-8 right-0 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
+                                title="Excluir avaliação"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                           </div>
                       </div>
                       <p className="text-xs text-gray-400 mt-2">Modelo: {evaluation.templateName}</p>
@@ -206,8 +333,7 @@ const DriverDashboard: React.FC = () => {
             </div>
           </div>
           
-          <div className="xl:col-span-2">
-            {selectedEvaluation ? (
+          <div className="lg:col-span-2">{selectedEvaluation ? (
               <Card>
                 <div className="p-6">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
@@ -230,12 +356,27 @@ const DriverDashboard: React.FC = () => {
 
                   <div className="mb-8">
                     <h4 className="text-lg font-semibold text-brand-dark mb-4">Notas por Critério</h4>
-                    <div className="h-[500px] w-full">
-                      <ResponsiveContainer>
-                          <BarChart layout="vertical" data={summaryChartData} margin={{ top: 5, right: 30, left: 150, bottom: 5 }}>
+                    <div className="h-[400px] sm:h-[500px] w-full overflow-x-auto">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <BarChart 
+                            layout="vertical" 
+                            data={summaryChartData} 
+                            margin={{ 
+                              top: 5, 
+                              right: 10, 
+                              left: isMobile ? 80 : 150, 
+                              bottom: 5 
+                            }}
+                          >
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} />
-                              <YAxis type="category" dataKey="name" width={150} tick={{fontSize: 12}} interval={0} />
+                              <YAxis 
+                                type="category" 
+                                dataKey="name" 
+                                width={isMobile ? 80 : 150}
+                                tick={{fontSize: isMobile ? 10 : 12}} 
+                                interval={0} 
+                              />
                               <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }}/>
                               <Legend />
                               <Bar dataKey="Nota" fill="#3B82F6" />
@@ -283,6 +424,43 @@ const DriverDashboard: React.FC = () => {
           </div>
         </Card>
       ) : null }
+        </div>
+      )}
+
+      {/* Popup de confirmação personalizado */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 p-2 rounded-full">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Confirmar Exclusão</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              Tem certeza que deseja excluir a avaliação de <strong>{deleteConfirm.name}</strong> do dia <strong>{formatDate(deleteConfirm.date)}</strong>?
+              <br />
+              <span className="text-sm text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
+            </p>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelDelete}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

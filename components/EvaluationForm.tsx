@@ -12,7 +12,7 @@ import Input from './ui/Input';
 import Textarea from './ui/Textarea';
 import Select from './ui/Select';
 
-const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'averageScore' | 'scores' | 'templateId' | 'templateName'> => ({
+const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'templateId' | 'templateName'> => ({
     matricula: '',
     setor: '',
     turno: '',
@@ -130,6 +130,9 @@ const EvaluationForm: React.FC = () => {
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
     
+    // Se o template não inclui cabeçalho, não deve ter averageScore
+    if (selectedTemplate.includeHeader === false) return undefined;
+    
     let ratingFieldsCount: number;
     if (selectedTemplate.criteriaConfig) {
       // Contar apenas campos do tipo 'rating'
@@ -164,9 +167,13 @@ const EvaluationForm: React.FC = () => {
         ...formData,
         scores,
         fieldValues,
-        averageScore,
+        averageScore: selectedTemplate.includeHeader === false ? undefined : averageScore,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
+        // Para formulários sem cabeçalho, garantir que motorista seja uma string descritiva
+        motorista: selectedTemplate.includeHeader === false ? 
+                   `Formulário ${selectedTemplate.name}` : 
+                   formData.motorista,
     };
 
     try {
@@ -207,6 +214,12 @@ const EvaluationForm: React.FC = () => {
   
   const renderAverageStatus = () => {
     const score = averageScore;
+    
+    // Se não há score (formulário sem cabeçalho), não renderiza nada
+    if (score === undefined || score === null) {
+      return null;
+    }
+    
     let statusText: string;
     let statusColor: string;
 
@@ -272,40 +285,42 @@ const EvaluationForm: React.FC = () => {
                 Trocar Modelo
             </Button>
         </div>
-        <div className="p-6">
-          <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho da Avaliação</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Input label="Matrícula" name="matricula" value={formData.matricula} onChange={handleInputChange} />
-            <Input label="Motorista" name="motorista" value={formData.motorista} onChange={handleInputChange} required />
-            <Input label="Setor Acompanhado" name="setor" value={formData.setor} onChange={handleInputChange} />
-            <Input label="VT (Veículo)" name="vt" value={formData.vt} onChange={handleInputChange} required />
-            <Select
-              label="Turno"
-              name="turno"
-              value={formData.turno}
-              onChange={handleInputChange}
-            >
-              <option value="">Selecione o turno</option>
-              <option value="Manhã">Manhã</option>
-              <option value="Tarde">Tarde</option>
-              <option value="Noite">Noite</option>
-            </Select>
-            <Select
-              label="Filial"
-              name="filial"
-              value={formData.filial}
-              onChange={handleInputChange}
-              required
-              disabled={isLoadingBranches}
-            >
-              <option value="">Selecione a filial</option>
-              {sortedBranches.map(branch => (
-                <option key={branch} value={branch}>{branch}</option>
-              ))}
-            </Select>
-            <Input label="Data do Acompanhamento" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
+        {selectedTemplate?.includeHeader === true && (
+          <div className="p-6">
+            <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho da Avaliação</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Input label="Matrícula" name="matricula" value={formData.matricula} onChange={handleInputChange} />
+              <Input label="Motorista" name="motorista" value={formData.motorista} onChange={handleInputChange} required />
+              <Input label="Setor Acompanhado" name="setor" value={formData.setor} onChange={handleInputChange} />
+              <Input label="VT (Veículo)" name="vt" value={formData.vt} onChange={handleInputChange} required />
+              <Select
+                label="Turno"
+                name="turno"
+                value={formData.turno}
+                onChange={handleInputChange}
+              >
+                <option value="">Selecione o turno</option>
+                <option value="Manhã">Manhã</option>
+                <option value="Tarde">Tarde</option>
+                <option value="Noite">Noite</option>
+              </Select>
+              <Select
+                label="Filial"
+                name="filial"
+                value={formData.filial}
+                onChange={handleInputChange}
+                required
+                disabled={isLoadingBranches}
+              >
+                <option value="">Selecione a filial</option>
+                {sortedBranches.map(branch => (
+                  <option key={branch} value={branch}>{branch}</option>
+                ))}
+              </Select>
+              <Input label="Data do Acompanhamento" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
+            </div>
           </div>
-        </div>
+        )}
       </Card>
       
       {selectedTemplate && ((selectedTemplate.criteriaConfig && selectedTemplate.criteriaConfig.length > 0) || (selectedTemplate.criteria && selectedTemplate.criteria.length > 0)) && (
@@ -344,33 +359,65 @@ const EvaluationForm: React.FC = () => {
           </Card>
       )}
 
-      <Card className="mt-6">
-        <div className="p-6">
-          <h3 className="text-xl font-bold text-brand-dark mb-6">Considerações Finais</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Textarea label="Prós em relação a condução apresentada?" name="pros" value={formData.pros} onChange={handleInputChange} rows={4} />
-            <Textarea label="Contras em relação a condução apresentada?" name="contras" value={formData.contras} onChange={handleInputChange} rows={4} />
-            <Textarea label="Considerações finais do instrutor" name="consideracoes" value={formData.consideracoes} onChange={handleInputChange} rows={4} />
+      {selectedTemplate?.includeFinalConsiderations === true && (
+        <Card className="mt-6">
+          <div className="p-6">
+            <h3 className="text-xl font-bold text-brand-dark mb-6">Considerações Finais</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Textarea label="Prós em relação a condução apresentada?" name="pros" value={formData.pros} onChange={handleInputChange} rows={4} />
+              <Textarea label="Contras em relação a condução apresentada?" name="contras" value={formData.contras} onChange={handleInputChange} rows={4} />
+              <Textarea label="Considerações finais do instrutor" name="consideracoes" value={formData.consideracoes} onChange={handleInputChange} rows={4} />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {selectedTemplate?.includeHeader === true && (
+        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
+            <span className="text-lg font-medium text-gray-600">Média Geral do Motorista:</span>
+            {renderAverageStatus()}
+          </div>
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <Button type="button" onClick={resetForm} variant="secondary" className="w-full md:w-auto">
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isSaving} className="w-full md:w-auto">
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              {isSaving ? 'Salvando...' : 'Salvar Avaliação'}
+            </Button>
           </div>
         </div>
-      </Card>
+      )}
 
-      <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
-          <span className="text-lg font-medium text-gray-600">Média Geral do Motorista:</span>
-          {renderAverageStatus()}
-        </div>
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <Button type="button" onClick={resetForm} variant="secondary" className="w-full md:w-auto">
+      {selectedTemplate?.includeHeader === false && (
+        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
+          <Button type="button" onClick={resetForm} variant="secondary">
             <RotateCcw className="h-4 w-4 mr-2" />
             Cancelar
           </Button>
-          <Button type="submit" disabled={isSaving} className="w-full md:w-auto">
-            {isSaving ? 'Salvando...' : <> <Save className="h-4 w-4 mr-2" /> Salvar Avaliação </>}
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            {isSaving ? 'Salvando...' : 'Enviar Formulário'}
           </Button>
         </div>
-      </div>
-      
+      )}
+
+      {/* Fallback para templates antigos sem configuração definida */}
+      {selectedTemplate && selectedTemplate.includeHeader !== true && selectedTemplate.includeHeader !== false && (
+        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
+          <Button type="button" onClick={resetForm} variant="secondary">
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            {isSaving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </div>
+      )}
+
       {showSuccess && (
         <div className="fixed bottom-4 right-4 bg-green-500 text-white py-3 px-5 rounded-lg shadow-xl animate-bounce">
           <div className="flex items-center gap-2">

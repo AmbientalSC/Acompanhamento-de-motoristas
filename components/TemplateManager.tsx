@@ -10,7 +10,7 @@ import Input from './ui/Input';
 import Select from './ui/Select';
 import { exampleTemplates } from '../data/exampleTemplates';
 
-type SubTab = 'models' | 'branches' | 'users';
+type SubTab = 'models' | 'branches' | 'users' | 'forms';
 
 const TemplateManager: React.FC = () => {
   const { canManageSystem } = useAuth();
@@ -28,6 +28,8 @@ const TemplateManager: React.FC = () => {
     required: false, 
     type: 'rating' 
   }]);
+  const [includeHeader, setIncludeHeader] = useState(true);
+  const [includeFinalConsiderations, setIncludeFinalConsiderations] = useState(true);
   const formRef = useRef<HTMLDivElement>(null);
 
   // Estados para filiais
@@ -48,7 +50,7 @@ const TemplateManager: React.FC = () => {
   const [userIsActive, setUserIsActive] = useState(true);
 
   useEffect(() => {
-    if (activeSubTab === 'models') {
+    if (activeSubTab === 'models' || activeSubTab === 'forms') {
       loadTemplates();
     } else if (activeSubTab === 'branches') {
       loadBranches();
@@ -157,12 +159,18 @@ const TemplateManager: React.FC = () => {
       required: false, 
       type: 'rating' 
     }]);
+    setIncludeHeader(true);
+    setIncludeFinalConsiderations(true);
   };
 
   const handleEdit = (template: EvaluationTemplate) => {
     // Definir o estado de edição primeiro
     setEditingTemplateId(template.id);
     setTemplateName(template.name);
+    
+    // Carregar configurações do template
+    setIncludeHeader(template.includeHeader === true);
+    setIncludeFinalConsiderations(template.includeFinalConsiderations === true);
     
     // Converter criteria antigas para nova estrutura se necessário
     if (template.criteriaConfig && template.criteriaConfig.length > 0) {
@@ -245,6 +253,9 @@ const TemplateManager: React.FC = () => {
         placeholder: c.placeholder || '',
         description: c.description || ''
       })).filter(c => c.name),
+      includeHeader,
+      includeFinalConsiderations,
+      isFormOnly: !includeHeader, // Se não incluir cabeçalho, é apenas formulário
     };
     
     try {
@@ -424,27 +435,28 @@ const TemplateManager: React.FC = () => {
   const SubTabButton: React.FC<{ tabName: SubTab; label: string; icon: React.ReactNode }> = ({ tabName, label, icon }) => (
     <button
       onClick={() => setActiveSubTab(tabName)}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent ${
+      className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent whitespace-nowrap min-w-0 ${
         activeSubTab === tabName
           ? 'bg-brand-primary text-white'
           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
       }`}
     >
       {icon}
-      {label}
+      <span className="truncate">{label}</span>
     </button>
   );
 
   return (
     <div className="space-y-6">
       {/* Header com sub-abas */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
         <h2 className="text-2xl font-bold text-brand-dark flex items-center gap-2">
           <Settings className="h-6 w-6 text-brand-primary" />
           Gerenciar Sistema
         </h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
           <SubTabButton tabName="models" label="Modelos" icon={<FileText className="h-4 w-4" />} />
+          <SubTabButton tabName="forms" label="Formulários" icon={<FileText className="h-4 w-4" />} />
           <SubTabButton tabName="branches" label="Filiais" icon={<Building className="h-4 w-4" />} />
           {canManageSystem && (
             <SubTabButton tabName="users" label="Usuários" icon={<Users className="h-4 w-4" />} />
@@ -471,6 +483,44 @@ const TemplateManager: React.FC = () => {
                 placeholder="Ex: Avaliação de Veículo Leve"
                 required 
               />
+
+              {/* Configurações do Template */}
+              <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">Configurações do Formulário</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      id="includeHeader"
+                      type="checkbox"
+                      checked={includeHeader}
+                      onChange={(e) => setIncludeHeader(e.target.checked)}
+                      className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                    />
+                    <label htmlFor="includeHeader" className="ml-2 block text-sm text-gray-700">
+                      <span className="font-medium">Incluir cabeçalho de avaliação</span>
+                      <span className="block text-xs text-gray-500">
+                        Dados do motorista, filial, veículo e média geral. Desmarque para criar apenas um formulário simples.
+                      </span>
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <input
+                      id="includeFinalConsiderations"
+                      type="checkbox"
+                      checked={includeFinalConsiderations}
+                      onChange={(e) => setIncludeFinalConsiderations(e.target.checked)}
+                      className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                    />
+                    <label htmlFor="includeFinalConsiderations" className="ml-2 block text-sm text-gray-700">
+                      <span className="font-medium">Incluir campo de considerações finais</span>
+                      <span className="block text-xs text-gray-500">
+                        Campo para observações, pontos positivos e melhorias.
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
               
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-3">Campos do Formulário</h3>
@@ -668,7 +718,19 @@ const TemplateManager: React.FC = () => {
                     <li key={template.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
                         <div className="flex-grow min-w-0">
-                          <p className="font-semibold text-gray-800 mb-2">{template.name}</p>
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="font-semibold text-gray-800">{template.name}</p>
+                            {template.includeHeader === false && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                Formulário
+                              </span>
+                            )}
+                            {template.includeHeader === true && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Avaliação
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1">
                             {template.criteriaConfig ? (
                               template.criteriaConfig.map((criterion, index) => (
@@ -986,6 +1048,100 @@ const TemplateManager: React.FC = () => {
                 </ul>
               ) : (
                 <p className="text-gray-500 text-center py-4">Nenhum usuário foi criado ainda.</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Conteúdo da aba Formulários */}
+      {activeSubTab === 'forms' && (
+        <div className="space-y-6">
+          <Card>
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
+                <FileText className="h-6 w-6 text-brand-primary" />
+                Formulários Simples
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Formulários sem cabeçalho de avaliação - ideais para coleta de dados, pesquisas e relatórios simples.
+              </p>
+              {isLoading ? (
+                <div className="flex justify-center items-center h-24">
+                  <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+                </div>
+              ) : templates.filter(t => t.includeHeader === false).length > 0 ? (
+                <ul className="space-y-3">
+                  {templates.filter(t => t.includeHeader === false).map(template => (
+                    <li key={template.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                        <div className="flex-grow min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="font-semibold text-gray-800">{template.name}</p>
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              Formulário
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {template.criteriaConfig ? (
+                              template.criteriaConfig.map((criterion, index) => (
+                                <span key={index} className="inline-flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border">
+                                  <span className="truncate max-w-[150px]" title={criterion.name}>
+                                    {criterion.name}
+                                  </span>
+                                  {criterion.required && (
+                                    <span className="text-red-500 font-bold">*</span>
+                                  )}
+                                  <span className="text-gray-400 uppercase text-xs">
+                                    {criterion.type === 'rating' ? 'AVAL' : 
+                                     criterion.type === 'text' ? 'TEXTO' :
+                                     criterion.type === 'radio' ? 'OPÇÃO' :
+                                     criterion.type === 'date' ? 'DATA' :
+                                     criterion.type === 'checkbox' ? 'CHECK' : ''}
+                                  </span>
+                                </span>
+                              ))
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {template.criteria.map((criterion, index) => (
+                                  <span key={index} className="inline-block text-xs bg-white px-2 py-1 rounded border truncate max-w-[150px]" title={criterion}>
+                                    {criterion}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                          <Button onClick={() => handleEdit(template)} variant="secondary" className="!py-1 !px-3 text-sm whitespace-nowrap">
+                            <Edit className="h-4 w-4 mr-1" />
+                            Editar
+                          </Button>
+                          <Button 
+                            onClick={() => handleDelete(template.id)} 
+                            variant="secondary" 
+                            className="!py-1 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200 whitespace-nowrap"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Excluir
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-4">Nenhum formulário simples foi criado ainda.</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Para criar um formulário simples, vá em "Modelos" e desmarque a opção "Incluir cabeçalho de avaliação".
+                  </p>
+                  <Button onClick={() => setActiveSubTab('models')} variant="secondary">
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    Criar Formulário
+                  </Button>
+                </div>
               )}
             </div>
           </Card>
