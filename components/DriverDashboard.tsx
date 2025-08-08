@@ -391,15 +391,15 @@ const DriverDashboard: React.FC = () => {
 
                   <div className="mb-8">
                     <h4 className="text-lg font-semibold text-brand-dark mb-4">Notas por Critério</h4>
-                    <div className="h-[500px] sm:h-[600px] w-full overflow-x-auto">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className={`w-full ${isMobile ? 'h-[700px] overflow-x-auto' : 'h-[600px]'}`}>
+                      <ResponsiveContainer width={isMobile ? Math.max(800, summaryChartData.length * 35) : "100%"} height="100%">
                           <BarChart 
                             layout="vertical" 
                             data={summaryChartData} 
                             margin={{ 
                               top: 20, 
-                              right: 30, 
-                              left: isMobile ? 120 : 200, 
+                              right: isMobile ? 50 : 30, 
+                              left: isMobile ? 180 : 200, 
                               bottom: 20 
                             }}
                           >
@@ -408,32 +408,39 @@ const DriverDashboard: React.FC = () => {
                                 type="number" 
                                 domain={[0, 10]} 
                                 ticks={[0, 2, 4, 6, 8, 10]}
-                                fontSize={12}
+                                fontSize={isMobile ? 10 : 12}
                               />
                               <YAxis 
                                 type="category" 
                                 dataKey="name" 
-                                width={isMobile ? 120 : 200}
-                                tick={{fontSize: isMobile ? 9 : 11, textAnchor: 'end'}} 
+                                width={isMobile ? 180 : 200}
+                                tick={{
+                                  fontSize: isMobile ? 8 : 11, 
+                                  textAnchor: 'end',
+                                  width: isMobile ? 170 : 190
+                                }} 
                                 interval={0}
                                 tickFormatter={(value: string) => {
-                                  // Quebrar textos longos em múltiplas linhas para mobile
-                                  if (isMobile && value.length > 15) {
-                                    const words = value.split(' ');
-                                    const lines: string[] = [];
-                                    let currentLine = '';
-                                    
-                                    words.forEach((word: string) => {
-                                      if ((currentLine + word).length <= 15) {
-                                        currentLine += (currentLine ? ' ' : '') + word;
-                                      } else {
-                                        if (currentLine) lines.push(currentLine);
-                                        currentLine = word;
-                                      }
-                                    });
-                                    if (currentLine) lines.push(currentLine);
-                                    
-                                    return lines.join('\n');
+                                  // Para mobile, truncar texto muito longo e quebrar em linhas
+                                  if (isMobile) {
+                                    if (value.length > 25) {
+                                      const words = value.split(' ');
+                                      const lines: string[] = [];
+                                      let currentLine = '';
+                                      
+                                      words.forEach((word: string) => {
+                                        if ((currentLine + ' ' + word).length <= 20) {
+                                          currentLine += (currentLine ? ' ' : '') + word;
+                                        } else {
+                                          if (currentLine) lines.push(currentLine);
+                                          currentLine = word;
+                                        }
+                                      });
+                                      if (currentLine) lines.push(currentLine);
+                                      
+                                      // Máximo 2 linhas para não ficar muito alto
+                                      return lines.slice(0, 2).join('\n');
+                                    }
                                   }
                                   return value;
                                 }}
