@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RadioOption } from '../../types';
 
 interface RadioGroupProps {
@@ -22,24 +22,35 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
   description,
   className = ''
 }) => {
-  // Gerar um ID único e estável para este grupo específico
-  const groupIdRef = useRef(`radiogroup_${name}_${Math.random().toString(36).substr(2, 9)}`);
-  const uniqueGroupName = groupIdRef.current;
+  // Estado interno para controlar o valor selecionado
+  const [selectedValue, setSelectedValue] = useState<string>(value || '');
+  
+  // Sincronizar com prop value quando mudada externamente
+  useEffect(() => {
+    setSelectedValue(value || '');
+  }, [value]);
 
-  // Filtrar opções vazias que podem causar problemas
+  // Filtrar opções vazias
   const validOptions = options.filter(option => 
-    option.value !== '' && option.label !== '' && option.value !== undefined && option.label !== undefined
+    option.value && option.label && option.value.trim() !== '' && option.label.trim() !== ''
   );
+
+  const handleOptionClick = (optionValue: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Atualizar estado interno imediatamente
+    setSelectedValue(optionValue);
+    
+    // Notificar componente pai
+    onChange(optionValue);
+  };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = event.target.value;
-    console.log(`RadioGroup [${name}] changed to:`, newValue, 'previous value:', value);
-    // Prevenir propagação para evitar interferência entre grupos
-    event.stopPropagation();
+    setSelectedValue(newValue);
     onChange(newValue);
   };
-
-  console.log(`RadioGroup [${name}] render - current value:`, value, 'group name:', uniqueGroupName);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -54,24 +65,30 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
       
       <div className="space-y-2">
         {validOptions.map((option, index) => {
-          const inputId = `${uniqueGroupName}_option_${index}`;
-          const isSelected = value === option.value;
-          
-          console.log(`RadioGroup [${name}] option [${option.value}] checked:`, isSelected);
+          const uniqueId = `${name}-${index}-${option.value.replace(/[^a-zA-Z0-9]/g, '')}`;
+          const isSelected = selectedValue === option.value;
           
           return (
-            <div key={`${uniqueGroupName}_${index}`} className="flex items-center space-x-2">
+            <div 
+              key={index} 
+              className="flex items-center space-x-2 cursor-pointer"
+              onClick={(e) => handleOptionClick(option.value, e)}
+            >
               <input
                 type="radio"
-                id={inputId}
-                name={uniqueGroupName}
+                id={uniqueId}
+                name={`radiogroup-${name}`}
                 value={option.value}
                 checked={isSelected}
                 onChange={handleInputChange}
-                className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300"
+                className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 cursor-pointer"
                 required={required}
               />
-              <label htmlFor={inputId} className="text-sm text-gray-700 cursor-pointer">
+              <label 
+                htmlFor={uniqueId} 
+                className="text-sm text-gray-700 cursor-pointer flex-1"
+                onClick={(e) => e.preventDefault()}
+              >
                 {option.label}
               </label>
             </div>

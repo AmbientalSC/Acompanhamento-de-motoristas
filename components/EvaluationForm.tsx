@@ -124,13 +124,7 @@ const EvaluationForm: React.FC = () => {
   }, []);
 
   const handleFieldChange = useCallback((fieldId: string, value: any) => {
-    console.log(`EvaluationForm handleFieldChange [${fieldId}] setting value:`, value);
-    setFieldValues(prev => {
-      console.log('Current fieldValues before change:', prev);
-      const newValues = { ...prev, [fieldId]: value };
-      console.log('New fieldValues after change:', newValues);
-      return newValues;
-    });
+    setFieldValues(prev => ({ ...prev, [fieldId]: value }));
   }, []);
 
   const averageScore = useMemo(() => {
