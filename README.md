@@ -18,26 +18,6 @@ Sistema web para avaliação e acompanhamento de performance de motoristas, dese
 - **Gráficos**: Recharts
 - **Ícones**: Lucide React
 
-## 📦 Instalação e Desenvolvimento
-
-### Pré-requisitos
-- Node.js (versão 18 ou superior)
-- npm ou yarn
-
-## 📁 Estrutura do Projeto
-
-```
-Acompanhamento-de-motoristas/
-├── components/          # Componentes React
-│   ├── ui/             # Componentes de UI reutilizáveis
-│   └── ...             # Componentes específicos
-├── contexts/           # Contextos React (Auth)
-├── services/           # Serviços (Firebase)
-├── public/             # Arquivos estáticos
-├── .github/workflows/  # GitHub Actions
-└── ...
-```
-
 ## 📄 Licença
 
 Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
