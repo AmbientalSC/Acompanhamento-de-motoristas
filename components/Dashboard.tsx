@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock } from 'lucide-react';
-import type { Evaluation } from '../types';
+import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations } from '../services/evaluationService';
+import { getTemplates } from '../services/firebaseService';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
 import Card from './ui/Card';
 import Select from './ui/Select';
@@ -18,6 +19,7 @@ const formatDate = (dateString: string) => {
 
 const Dashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<string>('');
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
@@ -25,15 +27,24 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const data = await getEvaluations();
-      setEvaluations(data);
-      if (data.length > 0) {
-        const uniqueDrivers = [...new Set(data.map(e => e.motorista))];
-        if (uniqueDrivers.length > 0) {
-          setSelectedDriver(data[0].motorista);
+      try {
+        const [evaluationsData, templatesData] = await Promise.all([
+          getEvaluations(),
+          getTemplates()
+        ]);
+        setEvaluations(evaluationsData);
+        setTemplates(templatesData);
+        if (evaluationsData.length > 0) {
+          const uniqueDrivers = [...new Set(evaluationsData.map(e => e.motorista))];
+          if (uniqueDrivers.length > 0) {
+            setSelectedDriver(evaluationsData[0].motorista);
+          }
         }
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     fetchData();
   }, []);
@@ -55,13 +66,24 @@ const Dashboard: React.FC = () => {
     }
   }, [driverEvaluations]);
 
+  // Função para mapear IDs de critérios para nomes legíveis
+  const getCriterionName = (criterionId: string, templateId: string): string => {
+    const template = templates.find(t => t.id === templateId);
+    if (template?.criteriaConfig) {
+      const criterion = template.criteriaConfig.find(c => c.id === criterionId);
+      return criterion?.name || criterionId;
+    }
+    // Para templates antigos ou se não encontrar, retorna o próprio ID
+    return criterionId;
+  };
+
   const summaryChartData = useMemo(() => {
     if (!selectedEvaluation?.scores) return [];
     return Object.entries(selectedEvaluation.scores).map(([criterion, score]) => ({
-      name: criterion,
+      name: getCriterionName(criterion, selectedEvaluation.templateId),
       Nota: score,
     }));
-  }, [selectedEvaluation]);
+  }, [selectedEvaluation, templates]);
   
   const renderAverageStatus = (score: number) => {
     if (score > 7) {
@@ -147,11 +169,11 @@ const Dashboard: React.FC = () => {
                               <p className="font-semibold text-gray-800">Data: {formatDate(evaluation.data)}</p>
                               <p className="text-sm text-gray-500">VT: {evaluation.vt}</p>
                               <div className="mt-2">
-                                {renderStatusBadge(evaluation.averageScore)}
+                                {evaluation.averageScore && renderStatusBadge(evaluation.averageScore)}
                               </div>
                           </div>
                           <div className="text-right">
-                              <span className="font-bold text-lg text-brand-primary">{evaluation.averageScore.toFixed(2)}</span>
+                              <span className="font-bold text-lg text-brand-primary">{evaluation.averageScore?.toFixed(2) || '0.00'}</span>
                               <p className="text-sm text-gray-500">Média</p>
                           </div>
                       </div>
@@ -171,7 +193,7 @@ const Dashboard: React.FC = () => {
                         <h3 className="text-xl font-bold text-brand-dark">Detalhes da Avaliação ({formatDate(selectedEvaluation.data)})</h3>
                         <p className="text-sm text-gray-500">Usando modelo: {selectedEvaluation.templateName}</p>
                     </div>
-                    {renderAverageStatus(selectedEvaluation.averageScore)}
+                    {selectedEvaluation.averageScore && renderAverageStatus(selectedEvaluation.averageScore)}
                   </div>
 
                   <div className="mb-8">

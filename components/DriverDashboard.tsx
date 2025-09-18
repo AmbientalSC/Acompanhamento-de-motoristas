@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock, FileText, ClipboardList, Trash2 } from 'lucide-react';
-import type { Evaluation } from '../types';
-import { getEvaluations, deleteEvaluation } from '../services/firebaseService';
+import type { Evaluation, EvaluationTemplate } from '../types';
+import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
 import Card from './ui/Card';
@@ -57,6 +57,7 @@ const useIsExtraSmall = () => {
 
 const DriverDashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<string>('');
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
@@ -68,11 +69,16 @@ const DriverDashboard: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const data = await getEvaluations();
-      setEvaluations(data);
-      if (data.length > 0) {
-        // Filtrar apenas avaliações verdadeiras para definir o motorista padrão
-        const realEvaluations = data.filter(e => 
+      try {
+        const [evaluationsData, templatesData] = await Promise.all([
+          getEvaluations(),
+          getTemplates()
+        ]);
+        setEvaluations(evaluationsData);
+        setTemplates(templatesData);
+        if (evaluationsData.length > 0) {
+          // Filtrar apenas avaliações verdadeiras para definir o motorista padrão
+          const realEvaluations = evaluationsData.filter(e => 
           e.averageScore !== undefined && 
           e.averageScore !== null && 
           e.averageScore > 0 && 
@@ -84,8 +90,12 @@ const DriverDashboard: React.FC = () => {
         if (uniqueDrivers.length > 0) {
           setSelectedDriver(realEvaluations[0].motorista);
         }
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     fetchData();
   }, []);
@@ -154,13 +164,24 @@ const DriverDashboard: React.FC = () => {
     }
   }, [driverEvaluations]);
 
+  // Função para mapear IDs de critérios para nomes legíveis
+  const getCriterionName = (criterionId: string, templateId: string): string => {
+    const template = templates.find(t => t.id === templateId);
+    if (template?.criteriaConfig) {
+      const criterion = template.criteriaConfig.find(c => c.id === criterionId);
+      return criterion?.name || criterionId;
+    }
+    // Para templates antigos ou se não encontrar, retorna o próprio ID
+    return criterionId;
+  };
+
   const summaryChartData = useMemo(() => {
     if (!selectedEvaluation?.scores) return [];
     return Object.entries(selectedEvaluation.scores).map(([criterion, score]) => ({
-      name: criterion,
+      name: getCriterionName(criterion, selectedEvaluation.templateId),
       Nota: score,
     }));
-  }, [selectedEvaluation]);
+  }, [selectedEvaluation, templates]);
 
   const handleGenerateDriverAnalysisPDF = async () => {
     if (driverEvaluations.length === 0) {

@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import type { Evaluation } from '../types';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
+import { getTemplates } from './firebaseService';
 
 export class PDFService {
   private static async loadLogo(): Promise<string> {
@@ -148,24 +149,95 @@ export class PDFService {
 
     // Dados da tabela
     pdf.setFont('helvetica', 'normal');
-    Object.entries(evaluation.scores).forEach(([criterion, score]) => {
+
+    // Tenta mapear os ids das pontuações para os nomes (labels) do template usado
+    let orderedEntries: [string, number][] = [];
+    try {
+      const templates = await getTemplates();
+      const template = templates.find(t => t.id === evaluation.templateId);
+      const entries = Object.entries(evaluation.scores || {});
+
+      if (template) {
+        // Se houver configuração expandida (criteriaConfig), usa-a para ordenar e obter labels
+        if (template.criteriaConfig && template.criteriaConfig.length > 0) {
+          const added = new Set<string>();
+
+          for (const crit of template.criteriaConfig) {
+            const byId = entries.find(([k]) => k === crit.id);
+            const byName = entries.find(([k]) => k === crit.name);
+            const found = byId || byName;
+            if (found && !added.has(found[0])) {
+              orderedEntries.push([crit.name, found[1] as number]);
+              added.add(found[0]);
+            }
+          }
+
+          // Adiciona quaisquer campos restantes que não estavam no template (compatibilidade)
+          for (const [k, v] of entries) {
+            if (!added.has(k)) {
+              const conf = template.criteriaConfig!.find(c => c.id === k || c.name === k);
+              orderedEntries.push([conf ? conf.name : k, v as number]);
+              added.add(k);
+            }
+          }
+        } else if (template.criteria && template.criteria.length > 0) {
+          // Versão legada: criteria é uma lista de chaves (pode ser id ou name)
+          const added = new Set<string>();
+          for (const key of template.criteria) {
+            const found = entries.find(([k]) => k === key);
+            if (found && !added.has(found[0])) {
+              orderedEntries.push([found[0], found[1] as number]);
+              added.add(found[0]);
+            } else {
+              // tenta mapear pelo nome em criteriaConfig quando disponível
+              const conf = template.criteriaConfig?.find(c => c.name === key || c.id === key);
+              if (conf) {
+                const f2 = entries.find(([k]) => k === conf.id || k === conf.name);
+                if (f2 && !added.has(f2[0])) {
+                  orderedEntries.push([conf.name, f2[1] as number]);
+                  added.add(f2[0]);
+                }
+              }
+            }
+          }
+
+          for (const [k, v] of entries) {
+            if (!added.has(k)) {
+              orderedEntries.push([k, v as number]);
+              added.add(k);
+            }
+          }
+        } else {
+          // Sem informação de template suficiente: mantém a ordem natural
+          orderedEntries = entries.map(([k, v]) => [k, v as number]);
+        }
+      } else {
+        orderedEntries = entries.map(([k, v]) => [k, v as number]);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar templates para mapear critérios no PDF:', err);
+      orderedEntries = Object.entries(evaluation.scores || {}).map(([k, v]) => [k, v as number]);
+    }
+
+    for (const [criterionLabel, score] of orderedEntries) {
       if (yPosition > pageHeight - 60) {
         pdf.addPage();
         yPosition = margin;
       }
-      
-      pdf.text(criterion, margin + 2, yPosition);
+
+      pdf.text(criterionLabel, margin + 2, yPosition);
       pdf.text(score.toString(), margin + contentWidth - 20, yPosition);
       yPosition += 6;
-    });
+    }
 
     yPosition += 10;
 
     // Média geral com status
-    const status = getEvaluationStatus(evaluation.averageScore);
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(`MÉDIA GERAL: ${evaluation.averageScore.toFixed(2)} (${status.label})`, margin, yPosition);
+  const avg = evaluation.averageScore ?? 0;
+  const status = getEvaluationStatus(avg);
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`MÉDIA GERAL: ${avg.toFixed(2)} (${status.label})`, margin, yPosition);
     yPosition += 15;
 
     // Observações
@@ -318,10 +390,11 @@ export class PDFService {
     yPosition += 15;
 
     // Estatísticas gerais
-    const totalEvaluations = evaluations.length;
-    const averageScore = evaluations.reduce((sum, e) => sum + e.averageScore, 0) / totalEvaluations;
-    const bestScore = Math.max(...evaluations.map(e => e.averageScore));
-    const worstScore = Math.min(...evaluations.map(e => e.averageScore));
+  const totalEvaluations = evaluations.length;
+  const scoreValues = evaluations.map(e => e.averageScore).filter((v): v is number => typeof v === 'number');
+  const averageScore = scoreValues.length > 0 ? (scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length) : 0;
+  const bestScore = scoreValues.length > 0 ? Math.max(...scoreValues) : 0;
+  const worstScore = scoreValues.length > 0 ? Math.min(...scoreValues) : 0;
 
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
@@ -378,12 +451,12 @@ export class PDFService {
       }
       
       const date = new Date(evaluation.data).toLocaleDateString('pt-BR');
-      const status = getEvaluationStatus(evaluation.averageScore);
+  const status = getEvaluationStatus(evaluation.averageScore ?? 0);
       
       pdf.text(date, margin + 2, yPosition);
       pdf.text(evaluation.filial, margin + 35, yPosition);
       pdf.text(evaluation.turno, margin + 70, yPosition);
-      pdf.text(evaluation.averageScore.toFixed(2), margin + 100, yPosition);
+  pdf.text((evaluation.averageScore ?? 0).toFixed(2), margin + 100, yPosition);
       pdf.text(status.label, margin + 130, yPosition);
       pdf.text(evaluation.templateName, margin + 160, yPosition);
       yPosition += 6;

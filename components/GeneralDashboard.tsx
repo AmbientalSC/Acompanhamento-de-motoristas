@@ -2,14 +2,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Users, Building, FileSpreadsheet, Clock, Filter, X } from 'lucide-react';
-import type { Evaluation } from '../types';
-import { getEvaluations } from '../services/firebaseService';
+import type { Evaluation, EvaluationTemplate } from '../types';
+import { getEvaluations, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Select from './ui/Select';
 
 const GeneralDashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   
@@ -25,9 +26,18 @@ const GeneralDashboard: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const data = await getEvaluations();
-      setEvaluations(data);
-      setIsLoading(false);
+      try {
+        const [evaluationsData, templatesData] = await Promise.all([
+          getEvaluations(),
+          getTemplates()
+        ]);
+        setEvaluations(evaluationsData);
+        setTemplates(templatesData);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
     fetchData();
   }, []);
@@ -58,7 +68,7 @@ const GeneralDashboard: React.FC = () => {
   // Opções para os filtros
   const filiais = useMemo(() => [...new Set(evaluations.map(e => e.filial))], [evaluations]);
   const turnos = useMemo(() => [...new Set(evaluations.map(e => e.turno))], [evaluations]);
-  const templates = useMemo(() => {
+  const templateOptions = useMemo(() => {
     const uniqueTemplates = evaluations.reduce((acc, e) => {
       acc[e.templateId] = e.templateName;
       return acc;
@@ -82,6 +92,17 @@ const GeneralDashboard: React.FC = () => {
 
   const hasActiveFilters = Object.values(filters).some(value => value !== '');
 
+  // Função para mapear IDs de critérios para nomes legíveis
+  const getCriterionName = (criterionId: string, templateId: string): string => {
+    const template = templates.find(t => t.id === templateId);
+    if (template?.criteriaConfig) {
+      const criterion = template.criteriaConfig.find(c => c.id === criterionId);
+      return criterion?.name || criterionId;
+    }
+    // Para templates antigos ou se não encontrar, retorna o próprio ID
+    return criterionId;
+  };
+
   const analytics = useMemo(() => {
     if (filteredEvaluations.length === 0) return null;
 
@@ -91,20 +112,20 @@ const GeneralDashboard: React.FC = () => {
     const overallAverage = filteredEvaluations.reduce((sum, e) => sum + (e.averageScore || 0), 0) / totalEvaluations;
 
     // Criteria Analysis
-    const criteriaStats: { [key: string]: { totalScore: number; count: number } } = {};
+    const criteriaStats: { [key: string]: { totalScore: number; count: number; templateId: string } } = {};
     filteredEvaluations.forEach(evaluation => {
       Object.entries(evaluation.scores).forEach(([criterion, score]) => {
         if (!criteriaStats[criterion]) {
-          criteriaStats[criterion] = { totalScore: 0, count: 0 };
+          criteriaStats[criterion] = { totalScore: 0, count: 0, templateId: evaluation.templateId };
         }
         criteriaStats[criterion].totalScore += score;
         criteriaStats[criterion].count++;
       });
     });
 
-    // Top 5 e Bottom 5 critérios
+    // Top 5 e Bottom 5 critérios - agora com nomes corretos
     const criteriaAverages = Object.entries(criteriaStats).map(([criterion, stats]) => ({
-      name: criterion,
+      name: getCriterionName(criterion, stats.templateId),
       Média: stats.totalScore / stats.count
     })).sort((a, b) => b.Média - a.Média);
 
@@ -150,7 +171,7 @@ const GeneralDashboard: React.FC = () => {
       performanceByBranch,
       performanceByShift,
     };
-  }, [filteredEvaluations]);
+  }, [filteredEvaluations, templates]);
   
   const PIE_COLORS = ['#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
 
@@ -260,7 +281,7 @@ const GeneralDashboard: React.FC = () => {
                   onChange={(e) => handleFilterChange('templateId', e.target.value)}
                 >
                   <option value="">Todos os modelos</option>
-                  {templates.map(template => (
+                  {templateOptions.map(template => (
                     <option key={template.id} value={template.id}>{template.name}</option>
                   ))}
                 </Select>
@@ -296,7 +317,7 @@ const GeneralDashboard: React.FC = () => {
                     <strong>Filtros ativos:</strong> 
                     {filters.filial && ` Filial: ${filters.filial}`}
                     {filters.turno && ` Turno: ${filters.turno}`}
-                    {filters.templateId && ` Modelo: ${templates.find(t => t.id === filters.templateId)?.name}`}
+                    {filters.templateId && ` Modelo: ${templateOptions.find(t => t.id === filters.templateId)?.name}`}
                     {filters.dataInicio && ` De: ${filters.dataInicio}`}
                     {filters.dataFim && ` Até: ${filters.dataFim}`}
                   </p>

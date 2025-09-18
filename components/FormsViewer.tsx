@@ -278,16 +278,51 @@ const FormsViewer: React.FC = () => {
                       <div className="mt-4 border-t pt-4">
                         <h4 className="font-medium text-gray-700 mb-3">Dados Preenchidos:</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {Object.entries(form.fieldValues).map(([fieldKey, value]) => (
-                            <div key={fieldKey} className="bg-gray-50 p-3 rounded">
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                {getFieldName(fieldKey, form.templateId)}
-                              </label>
-                              <div className="text-sm text-gray-800">
-                                {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
+                          {(() => {
+                            // Ordena os campos conforme o template (criteriaConfig) quando disponível.
+                            const entries = Object.entries(form.fieldValues || {});
+                            if (entries.length === 0) return null;
+
+                            const template = templates.find(t => t.id === form.templateId);
+                            let orderedEntries: [string, any][] = [];
+
+                            if (template && template.criteriaConfig && template.criteriaConfig.length > 0) {
+                              const added = new Set<string>();
+
+                              // Para cada critério do template, procura pela chave correspondente (id ou name)
+                              for (const crit of template.criteriaConfig) {
+                                const byId = entries.find(([k]) => k === crit.id);
+                                const byName = entries.find(([k]) => k === crit.name);
+                                const found = byId || byName;
+                                if (found && !added.has(found[0])) {
+                                  orderedEntries.push(found);
+                                  added.add(found[0]);
+                                }
+                              }
+
+                              // Adiciona quaisquer campos restantes que não estavam no template (compatibilidade)
+                              for (const e of entries) {
+                                if (!added.has(e[0])) {
+                                  orderedEntries.push(e);
+                                  added.add(e[0]);
+                                }
+                              }
+                            } else {
+                              // Sem template, mantém a ordem natural dos fieldValues
+                              orderedEntries = entries;
+                            }
+
+                            return orderedEntries.map(([fieldKey, value]) => (
+                              <div key={fieldKey} className="bg-gray-50 p-3 rounded">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  {getFieldName(fieldKey, form.templateId)}
+                                </label>
+                                <div className="text-sm text-gray-800">
+                                  {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                       </div>
                     )}
