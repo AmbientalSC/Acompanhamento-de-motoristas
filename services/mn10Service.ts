@@ -541,7 +541,12 @@ export const duplicateMn10Form = async (formId: string): Promise<MN10Form> => {
 };
 
 export const getMn10FormByPublicId = async (publicId: string): Promise<MN10Form | null> => {
-  const q = query(formsCollectionRef, where('publicId', '==', publicId), limit(1));
+  const q = query(
+    formsCollectionRef,
+    where('publicId', '==', publicId),
+    where('status', '==', 'published'),
+    limit(1)
+  );
   const snapshot = await getDocs(q);
   if (snapshot.empty) {
     return null;
