@@ -114,6 +114,7 @@ export interface MN10Form {
   status: MN10FormStatus;
   publicId: string;
   questions: MN10Question[];
+  responseTitleQuestionId?: string;
   responseCount: number;
   createdByUid: string;
   createdByEmail: string;

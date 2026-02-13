@@ -1,6 +1,7 @@
 import {
   Timestamp,
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -36,6 +37,7 @@ export interface CreateMn10FormInput {
   description?: string;
   status?: MN10FormStatus;
   questions: MN10Question[];
+  responseTitleQuestionId?: string;
   createdByUid: string;
   createdByEmail: string;
   publicId?: string;
@@ -45,6 +47,7 @@ export interface UpdateMn10FormMetaInput {
   title?: string;
   description?: string;
   status?: MN10FormStatus;
+  responseTitleQuestionId?: string | null;
 }
 
 export interface SubmitMn10ResponseInput {
@@ -134,6 +137,27 @@ const isInternalQuestion = (question: MN10Question): boolean => {
   return normalizeQuestionVisibility(question) === 'internal';
 };
 
+const resolveResponseTitleQuestionId = (
+  questions: MN10Question[],
+  responseTitleQuestionId?: string | null
+): string | undefined => {
+  if (!responseTitleQuestionId) {
+    return undefined;
+  }
+
+  const normalizedId = responseTitleQuestionId.trim();
+  if (!normalizedId) {
+    return undefined;
+  }
+
+  const question = questions.find(item => item.id === normalizedId);
+  if (!question || question.type === 'file_upload') {
+    return undefined;
+  }
+
+  return normalizedId;
+};
+
 const normalizeQuestions = (questions: MN10Question[]): MN10Question[] => {
   return questions
     .map((question, index) => {
@@ -202,6 +226,10 @@ const mapFormDoc = (id: string, data: Record<string, unknown>): MN10Form => {
     status: (data.status as MN10FormStatus) || 'draft',
     publicId: String(data.publicId || ''),
     questions: rawQuestions,
+    responseTitleQuestionId:
+      typeof data.responseTitleQuestionId === 'string' && data.responseTitleQuestionId.trim().length > 0
+        ? data.responseTitleQuestionId.trim()
+        : undefined,
     responseCount: Number(data.responseCount || 0),
     createdByUid: String(data.createdByUid || ''),
     createdByEmail: String(data.createdByEmail || ''),
@@ -406,10 +434,14 @@ export const listMn10Forms = async (): Promise<MN10Form[]> => {
 export const createMn10Form = async (input: CreateMn10FormInput): Promise<MN10Form> => {
   const now = Timestamp.now();
   const normalizedQuestions = normalizeQuestions(input.questions);
+  const responseTitleQuestionId = resolveResponseTitleQuestionId(
+    normalizedQuestions,
+    input.responseTitleQuestionId
+  );
   const formRef = doc(formsCollectionRef);
   const publicId = await resolvePublicId(input.publicId);
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     title: input.title.trim(),
     description: (input.description || '').trim(),
     status: input.status || 'draft',
@@ -422,6 +454,10 @@ export const createMn10Form = async (input: CreateMn10FormInput): Promise<MN10Fo
     updatedAt: now,
   };
 
+  if (responseTitleQuestionId) {
+    payload.responseTitleQuestionId = responseTitleQuestionId;
+  }
+
   await setDoc(formRef, payload);
   return mapFormDoc(formRef.id, payload);
 };
@@ -431,12 +467,7 @@ export const updateMn10FormMeta = async (
   patch: UpdateMn10FormMetaInput
 ): Promise<void> => {
   const formRef = doc(db, MN10_FORMS_COLLECTION, formId);
-  const dataToUpdate: {
-    updatedAt: Timestamp;
-    title?: string;
-    description?: string;
-    status?: MN10FormStatus;
-  } = {
+  const dataToUpdate: Record<string, unknown> = {
     updatedAt: Timestamp.now(),
   };
 
@@ -448,6 +479,20 @@ export const updateMn10FormMeta = async (
   }
   if (patch.status !== undefined) {
     dataToUpdate.status = patch.status;
+  }
+  if (patch.responseTitleQuestionId !== undefined) {
+    const formSnapshot = await getDoc(formRef);
+    if (!formSnapshot.exists()) {
+      throw new Error('Formulario nao encontrado.');
+    }
+
+    const form = mapFormDoc(formSnapshot.id, formSnapshot.data());
+    const resolvedResponseTitleQuestionId = resolveResponseTitleQuestionId(
+      form.questions,
+      patch.responseTitleQuestionId
+    );
+
+    dataToUpdate.responseTitleQuestionId = resolvedResponseTitleQuestionId || deleteField();
   }
 
   await updateDoc(formRef, dataToUpdate);
@@ -462,8 +507,16 @@ export const updateMn10FormStructure = async (
   if (!formSnapshot.exists()) {
     throw new Error('Formulário não encontrado.');
   }
+  const form = mapFormDoc(formSnapshot.id, formSnapshot.data());
+  const normalizedQuestions = normalizeQuestions(questions);
+  const resolvedResponseTitleQuestionId = resolveResponseTitleQuestionId(
+    normalizedQuestions,
+    form.responseTitleQuestionId
+  );
+
   await updateDoc(formRef, {
-    questions: normalizeQuestions(questions),
+    questions: normalizedQuestions,
+    responseTitleQuestionId: resolvedResponseTitleQuestionId || deleteField(),
     updatedAt: Timestamp.now(),
   });
 };
@@ -481,6 +534,7 @@ export const duplicateMn10Form = async (formId: string): Promise<MN10Form> => {
     description: source.description,
     status: 'draft',
     questions: source.questions,
+    responseTitleQuestionId: source.responseTitleQuestionId,
     createdByUid: source.createdByUid,
     createdByEmail: source.createdByEmail,
   });
@@ -634,19 +688,8 @@ export const submitMn10Response = async (
     }
   }
 
-  const formRef = doc(db, MN10_FORMS_COLLECTION, form.id);
-
-  await runTransaction(db, async transaction => {
-    const latestFormSnapshot = await transaction.get(formRef);
-    if (!latestFormSnapshot.exists()) {
-      throw new Error('Formulário não encontrado.');
-    }
-    const latestForm = latestFormSnapshot.data();
-    if (latestForm.status !== 'published') {
-      throw new Error('Este formulário não está disponível para respostas.');
-    }
-
-    transaction.set(responseDocRef, {
+  try {
+    await setDoc(responseDocRef, {
       formId: form.id,
       publicId: form.publicId,
       answers: normalizedAnswers,
@@ -656,13 +699,37 @@ export const submitMn10Response = async (
       submittedAt: Timestamp.now(),
       userAgent: input.userAgent || '',
     });
+  } catch (createResponseError) {
+    const errorCode = String((createResponseError as { code?: unknown }).code || '');
+    if (errorCode === 'permission-denied') {
+      throw new Error('Este formulario nao esta disponivel para respostas.');
+    }
+    throw createResponseError;
+  }
 
-    transaction.update(formRef, {
-      responseCount: Number(latestForm.responseCount || 0) + 1,
-      updatedAt: Timestamp.now(),
+  const formRef = doc(db, MN10_FORMS_COLLECTION, form.id);
+  try {
+    await runTransaction(db, async transaction => {
+      const latestFormSnapshot = await transaction.get(formRef);
+      if (!latestFormSnapshot.exists()) {
+        return;
+      }
+      const latestForm = latestFormSnapshot.data();
+      if (latestForm.status !== 'published') {
+        return;
+      }
+
+      transaction.update(formRef, {
+        responseCount: Number(latestForm.responseCount || 0) + 1,
+        updatedAt: Timestamp.now(),
+      });
     });
-  });
-
+  } catch (counterError) {
+    const errorCode = String((counterError as { code?: unknown }).code || '');
+    if (errorCode !== 'permission-denied') {
+      console.warn('Falha ao atualizar contador de respostas do formulario:', counterError);
+    }
+  }
   return {
     responseId,
     submittedAt: Date.now(),
@@ -740,3 +807,4 @@ export const getMn10AttachmentDownloadUrl = async (path: string): Promise<string
   const fileRef = ref(storage, path);
   return getDownloadURL(fileRef);
 };
+

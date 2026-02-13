@@ -89,7 +89,8 @@ service cloud.firestore {
     }
 
     match /mn10Forms/{formId} {
-      allow read, write: if hasMn10Access();
+      allow read: if hasMn10Access() || resource.data.status == 'published';
+      allow create, update, delete: if hasMn10Access();
 
       match /responses/{responseId} {
         allow create: if hasOnlyAllowedResponseKeys() &&

@@ -109,6 +109,19 @@ const formatAnswer = (question: MN10Question, response: MN10Response): string =>
   return String(value);
 };
 
+const formatResponseTitleValue = (value: MN10AnswerValue): string => {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(', ') : '';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'Sim' : 'Nao';
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value).trim();
+};
+
 const statusClass: Record<MN10FormStatus, string> = {
   draft: 'bg-gray-100 text-gray-700',
   published: 'bg-green-100 text-green-700',
@@ -129,6 +142,7 @@ const MN10Dashboard: React.FC = () => {
   const [publicIdCode, setPublicIdCode] = useState('');
   const [status, setStatus] = useState<MN10FormStatus>('draft');
   const [questions, setQuestions] = useState<MN10Question[]>([createQuestion('short_text', 0)]);
+  const [responseTitleQuestionId, setResponseTitleQuestionId] = useState('');
 
   const [selectedFormId, setSelectedFormId] = useState<string>('');
   const [responses, setResponses] = useState<MN10Response[]>([]);
@@ -211,6 +225,42 @@ const MN10Dashboard: React.FC = () => {
     [selectedResponseQuestions]
   );
 
+  const responseTitleQuestionOptions = useMemo(
+    () =>
+      questions.filter(question => question.type !== 'file_upload').map((question, index) => ({
+        id: question.id,
+        label: question.title.trim() || `Pergunta ${index + 1}`,
+        isInternal: isInternalQuestion(question),
+      })),
+    [questions]
+  );
+
+  const resolveResponseCardTitle = useCallback(
+    (response: MN10Response): string => {
+      const fallback = `Resposta ${response.id.slice(-6)}`;
+      const titleQuestionId = selectedForm?.responseTitleQuestionId;
+      if (!selectedForm || !titleQuestionId) {
+        return fallback;
+      }
+
+      const titleQuestion =
+        selectedForm.questions.find(question => question.id === titleQuestionId) ||
+        (response.questionSnapshot || []).find(question => question.id === titleQuestionId);
+      if (!titleQuestion) {
+        return fallback;
+      }
+
+      const rawValue = getAnswerValue(titleQuestion, response);
+      const formatted = formatResponseTitleValue(rawValue);
+      if (!formatted) {
+        return fallback;
+      }
+
+      return formatted.length > 72 ? `${formatted.slice(0, 69)}...` : formatted;
+    },
+    [selectedForm]
+  );
+
   const clearEditor = () => {
     setEditingFormId(null);
     setTitle('');
@@ -218,6 +268,7 @@ const MN10Dashboard: React.FC = () => {
     setPublicIdCode('');
     setStatus('draft');
     setQuestions([createQuestion('short_text', 0)]);
+    setResponseTitleQuestionId('');
   };
 
   const notify = (text: string) => {
@@ -297,6 +348,19 @@ const MN10Dashboard: React.FC = () => {
     setInternalAnswersDraft({ ...(selectedResponse.internalAnswers || {}) });
     setOpenInternalCalendarQuestionId(null);
   }, [selectedResponse]);
+
+  useEffect(() => {
+    if (!responseTitleQuestionId) {
+      return;
+    }
+
+    const hasSelectedQuestion = questions.some(
+      question => question.id === responseTitleQuestionId && question.type !== 'file_upload'
+    );
+    if (!hasSelectedQuestion) {
+      setResponseTitleQuestionId('');
+    }
+  }, [questions, responseTitleQuestionId]);
 
   const updateQuestion = (index: number, patch: Partial<MN10Question>) => {
     setQuestions(prev => {
@@ -430,10 +494,21 @@ const MN10Dashboard: React.FC = () => {
         : undefined,
     }));
 
+    const validResponseTitleQuestionId = payloadQuestions.some(
+      question => question.id === responseTitleQuestionId && question.type !== 'file_upload'
+    )
+      ? responseTitleQuestionId
+      : '';
+
     setSaving(true);
     try {
       if (editingFormId) {
-        await updateMn10FormMeta(editingFormId, { title, description, status });
+        await updateMn10FormMeta(editingFormId, {
+          title,
+          description,
+          status,
+          responseTitleQuestionId: validResponseTitleQuestionId || null,
+        });
         await updateMn10FormStructure(editingFormId, payloadQuestions);
         notify('Formulario atualizado com sucesso.');
       } else {
@@ -446,6 +521,7 @@ const MN10Dashboard: React.FC = () => {
           status,
           publicId: publicIdCode.trim() || undefined,
           questions: payloadQuestions,
+          responseTitleQuestionId: validResponseTitleQuestionId || undefined,
           createdByUid: currentUser.uid,
           createdByEmail: currentUser.email || 'usuario@local',
         });
@@ -468,6 +544,7 @@ const MN10Dashboard: React.FC = () => {
     setDescription(form.description || '');
     setPublicIdCode(form.publicId || '');
     setStatus(form.status);
+    setResponseTitleQuestionId(form.responseTitleQuestionId || '');
     setQuestions(
       form.questions.length > 0
         ? form.questions
@@ -686,6 +763,23 @@ const MN10Dashboard: React.FC = () => {
                   <option value="closed">Fechado</option>
                 </Select>
 
+                <Select
+                  label="Campo titulo das respostas"
+                  name="mn10ResponseTitleQuestion"
+                  value={responseTitleQuestionId}
+                  onChange={e => setResponseTitleQuestionId(e.target.value)}
+                >
+                  <option value="">Padrao: ID da resposta</option>
+                  {responseTitleQuestionOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}{option.isInternal ? ' (Interno)' : ''}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Define qual resposta sera usada como titulo na lista de respostas.
+                </p>
+
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-semibold text-brand-dark">Perguntas</h4>
@@ -836,7 +930,7 @@ const MN10Dashboard: React.FC = () => {
                   <div className="space-y-2 max-h-[500px] overflow-y-auto">
                     {responses.map(response => (
                       <button key={response.id} type="button" onClick={() => setSelectedResponseId(response.id)} className={`w-full text-left p-3 rounded-md border ${selectedResponseId === response.id ? 'border-brand-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                        <p className="text-sm font-semibold text-gray-800">Resposta {response.id.slice(-6)}</p>
+                        <p className="text-sm font-semibold text-gray-800 truncate">{resolveResponseCardTitle(response)}</p>
                         <p className="text-xs text-gray-500">{new Date(response.submittedAt).toLocaleString('pt-BR')}</p>
                       </button>
                     ))}
