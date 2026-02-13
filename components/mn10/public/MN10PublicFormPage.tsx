@@ -241,9 +241,22 @@ const MN10PublicFormPage: React.FC = () => {
     <div className="min-h-screen bg-gray-100 py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-5">
         <Card>
-          <div className="p-6 sm:p-8 space-y-2">
-            <h1 className="text-2xl font-bold text-brand-dark">{form.title}</h1>
-            {form.description && <p className="text-gray-600 text-sm sm:text-base">{form.description}</p>}
+          <div className="p-6 sm:p-8 space-y-4">
+            <div className="flex justify-center">
+              <div className="w-[220px] sm:w-[280px] h-[72px] sm:h-[88px] rounded-xl bg-white shadow-md border border-gray-100 flex items-center justify-center px-4">
+                <img
+                  src={`${import.meta.env.BASE_URL}ambiental.svg`}
+                  alt="Ambiental"
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-brand-dark">{form.title}</h1>
+              {form.description && <p className="text-gray-600 text-sm sm:text-base mt-2">{form.description}</p>}
+            </div>
+
             {success && (
               <div className="mt-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
                 Resposta enviada com sucesso! ID: {success.responseId} - {new Date(success.submittedAt).toLocaleString('pt-BR')}
