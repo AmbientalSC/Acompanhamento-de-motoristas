@@ -1,0 +1,124 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasMn10Access() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.canAccessMN10 == true ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (
+            userProfile().role == 'admin' ||
+            userProfile().canAccessMN10 == true
+          )
+        )
+      );
+    }
+
+    function isPublishedForm(formId) {
+      return get(/databases/$(database)/documents/mn10Forms/$(formId)).data.status == 'published';
+    }
+
+    function hasOnlyAllowedResponseKeys() {
+      return request.resource.data.keys().hasOnly([
+        'formId',
+        'publicId',
+        'answers',
+        'internalAnswers',
+        'attachments',
+        'questionSnapshot',
+        'submittedAt',
+        'internalUpdatedAt',
+        'userAgent'
+      ]);
+    }
+
+    function validResponsePayload(formId, responseId) {
+      return request.resource.data.formId == formId &&
+        request.resource.data.publicId is string &&
+        request.resource.data.answers is map &&
+        request.resource.data.answers.size() <= 200 &&
+        (
+          !request.resource.data.keys().hasAny(['internalAnswers']) ||
+          (
+            request.resource.data.internalAnswers is map &&
+            request.resource.data.internalAnswers.size() == 0
+          )
+        ) &&
+        request.resource.data.attachments is list &&
+        request.resource.data.attachments.size() <= 20 &&
+        (
+          !request.resource.data.keys().hasAny(['questionSnapshot']) ||
+          (
+            request.resource.data.questionSnapshot is list &&
+            request.resource.data.questionSnapshot.size() <= 200
+          )
+        ) &&
+        (
+          !request.resource.data.keys().hasAny(['internalUpdatedAt']) ||
+          request.resource.data.internalUpdatedAt is timestamp
+        ) &&
+        request.resource.data.submittedAt is timestamp &&
+        request.resource.id == responseId;
+    }
+
+    function validResponseInternalUpdate() {
+      return hasOnlyAllowedResponseKeys() &&
+        request.resource.data.formId == resource.data.formId &&
+        request.resource.data.publicId == resource.data.publicId &&
+        request.resource.data.answers == resource.data.answers &&
+        request.resource.data.attachments == resource.data.attachments &&
+        request.resource.data.questionSnapshot == resource.data.questionSnapshot &&
+        request.resource.data.submittedAt == resource.data.submittedAt &&
+        request.resource.data.userAgent == resource.data.userAgent &&
+        request.resource.data.internalAnswers is map &&
+        request.resource.data.internalAnswers.size() <= 200 &&
+        (
+          !request.resource.data.keys().hasAny(['internalUpdatedAt']) ||
+          request.resource.data.internalUpdatedAt is timestamp
+        );
+    }
+
+    match /mn10Forms/{formId} {
+      allow read, write: if hasMn10Access();
+
+      match /responses/{responseId} {
+        allow create: if hasOnlyAllowedResponseKeys() &&
+          validResponsePayload(formId, responseId) &&
+          isPublishedForm(formId);
+
+        allow read, delete: if hasMn10Access();
+        allow update: if hasMn10Access() && validResponseInternalUpdate();
+      }
+    }
+
+    match /templates/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /evaluations/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /branches/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /users/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

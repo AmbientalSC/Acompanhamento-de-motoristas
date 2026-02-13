@@ -25,11 +25,13 @@ export type UserRole = 'admin' | 'manager';
 // Representa um usuário do sistema
 export interface User {
   id: string;
+  authUID?: string;
   name: string;
   email: string;
   role: UserRole;
   position: string; // cargo
   branches: string[]; // filiais que pode acessar
+  canAccessMN10?: boolean;
   isActive: boolean;
   createdAt: number;
   updatedAt?: number;
@@ -60,9 +62,85 @@ export interface Evaluation {
   templateId: string; // ID do modelo usado
   templateName: string; // Nome do modelo usado
   scores: Record<string, number>; // Scores dinâmicos baseados nos critérios do modelo
-  fieldValues: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
+  fieldValues?: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
   averageScore?: number; // Opcional - undefined para formulários sem cabeçalho
   pros: string;
   contras: string;
   consideracoes: string;
+}
+
+export type MN10FormStatus = 'draft' | 'published' | 'closed';
+
+export type MN10QuestionType =
+  | 'short_text'
+  | 'long_text'
+  | 'single_choice'
+  | 'multiple_choice'
+  | 'dropdown'
+  | 'date'
+  | 'phone'
+  | 'boolean'
+  | 'file_upload';
+
+export type MN10QuestionVisibility = 'public' | 'internal';
+
+export interface MN10QuestionOption {
+  id: string;
+  label: string;
+}
+
+export interface MN10UploadConfig {
+  allowedTypes: Array<'image' | 'pdf'>;
+  maxSizeMB: number;
+  maxFiles?: number;
+}
+
+export interface MN10Question {
+  id: string;
+  title: string;
+  type: MN10QuestionType;
+  required: boolean;
+  visibility?: MN10QuestionVisibility;
+  helpText?: string;
+  options?: MN10QuestionOption[];
+  order: number;
+  uploadConfig?: MN10UploadConfig;
+}
+
+export interface MN10Form {
+  id: string;
+  title: string;
+  description?: string;
+  status: MN10FormStatus;
+  publicId: string;
+  questions: MN10Question[];
+  responseCount: number;
+  createdByUid: string;
+  createdByEmail: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type MN10AnswerValue = string | string[] | boolean | null;
+
+export interface MN10ResponseAttachment {
+  questionId: string;
+  fileName: string;
+  path: string;
+  size: number;
+  contentType: string;
+  uploadedAt: number;
+}
+
+export interface MN10Response {
+  id: string;
+  formId: string;
+  publicId: string;
+  answers: Record<string, MN10AnswerValue>;
+  internalAnswers?: Record<string, MN10AnswerValue>;
+  attachments: MN10ResponseAttachment[];
+  questionSnapshot?: MN10Question[];
+  submittedAt: number;
+  internalUpdatedAt?: number;
+  userAgent?: string;
 }

@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '../firebase';
 import type { User } from '../types';
-import { getUsers } from '../services/firebaseService';
+import { ensureUserDocumentByAuthUID, getUsers } from '../services/firebaseService';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -21,6 +21,7 @@ interface AuthContextType {
   isManager: boolean;
   canAccessBranch: (branch: string) => boolean;
   canManageSystem: boolean;
+  canAccessMN10: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,6 +48,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const isAdmin = systemUser?.role === 'admin';
   const isManager = systemUser?.role === 'manager';
   const canManageSystem = isAdmin;
+  const canAccessMN10 = isAdmin || systemUser?.canAccessMN10 === true;
   const canAccessBranch = (branch: string) => {
     if (isAdmin) return true;
     return systemUser?.branches.includes(branch) || false;
@@ -56,8 +58,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const loadSystemUser = async (firebaseUser: FirebaseUser) => {
     try {
       const users = await getUsers();
-      const user = users.find(u => u.email === firebaseUser.email && u.isActive);
-      setSystemUser(user || null);
+      const normalizedEmail = firebaseUser.email?.toLowerCase() || '';
+      const user =
+        users.find(u => (u.authUID === firebaseUser.uid || u.id === firebaseUser.uid) && u.isActive) ||
+        users.find(u => u.email.toLowerCase() === normalizedEmail && u.isActive);
+
+      if (!user) {
+        setSystemUser(null);
+        return;
+      }
+
+      const ensuredUser = await ensureUserDocumentByAuthUID(firebaseUser.uid, user);
+      setSystemUser(ensuredUser);
     } catch (error) {
       console.error('Erro ao carregar dados do usuário:', error);
       setSystemUser(null);
@@ -127,7 +139,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAdmin,
     isManager,
     canAccessBranch,
-    canManageSystem
+    canManageSystem,
+    canAccessMN10
   };
 
   return (

@@ -47,6 +47,7 @@ const TemplateManager: React.FC = () => {
   const [userPosition, setUserPosition] = useState('');
   const [userRole, setUserRole] = useState<'admin' | 'manager'>('manager');
   const [userBranches, setUserBranches] = useState<string[]>([]);
+  const [userCanAccessMN10, setUserCanAccessMN10] = useState(false);
   const [userIsActive, setUserIsActive] = useState(true);
 
   useEffect(() => {
@@ -60,6 +61,12 @@ const TemplateManager: React.FC = () => {
       loadBranches();
     }
   }, [activeSubTab]);
+
+  useEffect(() => {
+    if (userRole === 'admin') {
+      setUserCanAccessMN10(true);
+    }
+  }, [userRole]);
   
   const loadTemplates = async () => {
     setIsLoading(true);
@@ -343,6 +350,7 @@ const TemplateManager: React.FC = () => {
     setUserPosition('');
     setUserRole('manager');
     setUserBranches([]);
+    setUserCanAccessMN10(false);
     setUserIsActive(true);
   };
 
@@ -354,6 +362,7 @@ const TemplateManager: React.FC = () => {
     setUserPosition(user.position);
     setUserRole(user.role);
     setUserBranches([...user.branches]);
+    setUserCanAccessMN10(user.role === 'admin' ? true : user.canAccessMN10 === true);
     setUserIsActive(user.isActive);
     
     setTimeout(() => {
@@ -387,6 +396,7 @@ const TemplateManager: React.FC = () => {
       position: userPosition.trim(),
       role: userRole,
       branches: userRole === 'admin' ? [] : userBranches, // Admins têm acesso a todas
+      canAccessMN10: userRole === 'admin' ? true : userCanAccessMN10,
       isActive: userIsActive,
     };
     
@@ -935,6 +945,20 @@ const TemplateManager: React.FC = () => {
                     <option value="admin">Administrador</option>
                   </Select>
                 </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    id="userCanAccessMN10"
+                    type="checkbox"
+                    checked={userRole === 'admin' ? true : userCanAccessMN10}
+                    onChange={(e) => setUserCanAccessMN10(e.target.checked)}
+                    disabled={userRole === 'admin'}
+                    className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                  />
+                  <label htmlFor="userCanAccessMN10" className="text-sm text-gray-700">
+                    Acesso ao MN10 {userRole === 'admin' ? '(sempre habilitado para admin)' : ''}
+                  </label>
+                </div>
               </div>
 
               {userRole === 'manager' && (
@@ -1013,6 +1037,11 @@ const TemplateManager: React.FC = () => {
                             {!user.isActive && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                 Inativo
+                              </span>
+                            )}
+                            {(user.role === 'admin' || user.canAccessMN10) && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                MN10
                               </span>
                             )}
                           </div>

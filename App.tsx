@@ -1,19 +1,30 @@
 
 import React, { useState } from 'react';
-import { ClipboardList, LayoutDashboard, FileText, PieChart, LogOut, User, Menu, X } from 'lucide-react';
+import {
+  ClipboardList,
+  LayoutDashboard,
+  FileText,
+  PieChart,
+  LogOut,
+  User,
+  Menu,
+  X,
+  Medal,
+} from 'lucide-react';
 import EvaluationForm from './components/EvaluationForm';
 import DriverDashboard from './components/DriverDashboard';
 import TemplateManager from './components/TemplateManager';
 import GeneralDashboard from './components/GeneralDashboard';
+import MN10Dashboard from './components/mn10/MN10Dashboard';
 import { useAuth } from './contexts/AuthContext';
 import Button from './components/ui/Button';
 
-type Tab = 'form' | 'driver-dashboard' | 'general-dashboard' | 'templates';
+type Tab = 'form' | 'driver-dashboard' | 'general-dashboard' | 'templates' | 'mn10';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('general-dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { currentUser, logout, canManageSystem } = useAuth();
+  const { currentUser, logout, canManageSystem, canAccessMN10 } = useAuth();
 
   const renderContent = () => {
     switch (activeTab) {
@@ -25,6 +36,8 @@ const App: React.FC = () => {
         return <EvaluationForm />;
       case 'templates':
         return <TemplateManager />;
+      case 'mn10':
+        return <MN10Dashboard />;
       default:
         return <GeneralDashboard />;
     }
@@ -148,6 +161,14 @@ const App: React.FC = () => {
                 label="Gerenciar" 
                 icon={<FileText className="h-4 w-4 sm:h-5 sm:w-5" />}
                 onClick={() => handleTabClick('templates')}
+              />
+            )}
+            {canAccessMN10 && (
+              <TabButton
+                tabName="mn10"
+                label="MN10"
+                icon={<Medal className="h-4 w-4 sm:h-5 sm:w-5" />}
+                onClick={() => handleTabClick('mn10')}
               />
             )}
           </nav>

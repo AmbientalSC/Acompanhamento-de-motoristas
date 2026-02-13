@@ -2,11 +2,13 @@ import {
   collection, 
   addDoc, 
   getDocs, 
+  getDoc,
   updateDoc, 
   deleteDoc, 
   doc, 
   query, 
   orderBy,
+  setDoc,
   Timestamp 
 } from 'firebase/firestore';
 import { 
@@ -230,24 +232,34 @@ export const getUsers = async (): Promise<User[]> => {
   try {
     const q = query(collection(db, 'users'), orderBy('name', 'asc'));
     const querySnapshot = await getDocs(q);
-    const users: User[] = [];
+    const usersByAuth = new Map<string, User>();
     
     querySnapshot.forEach((doc) => {
       const data = doc.data();
-      users.push({
+      const mappedUser: User = {
         id: doc.id,
+        authUID: typeof data.authUID === 'string' && data.authUID.length > 0 ? data.authUID : doc.id,
         name: data.name,
         email: data.email,
         role: data.role,
         position: data.position,
         branches: data.branches || [],
+        canAccessMN10: data.role === 'admin' ? true : data.canAccessMN10 === true,
         isActive: data.isActive !== false, // default true
         createdAt: data.createdAt?.toMillis() || Date.now(),
         updatedAt: data.updatedAt?.toMillis(),
-      });
+      };
+
+      const dedupeKey = mappedUser.authUID || mappedUser.id;
+      const existingUser = usersByAuth.get(dedupeKey);
+
+      // Prefere o documento cujo ID já é o próprio UID do Auth.
+      if (!existingUser || mappedUser.id === dedupeKey) {
+        usersByAuth.set(dedupeKey, mappedUser);
+      }
     });
     
-    return users;
+    return Array.from(usersByAuth.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   } catch (error) {
     console.error('Erro ao buscar usuários:', error);
     throw new Error('Falha ao carregar usuários');
@@ -261,24 +273,28 @@ export const saveUser = async (userData: Omit<User, 'id' | 'createdAt' | 'update
     const authUser = userCredential.user;
     
     // Salvar perfil do usuário no Firestore
-    const docRef = await addDoc(collection(db, 'users'), {
+    const userRef = doc(db, 'users', authUser.uid);
+    await setDoc(userRef, {
       name: userData.name,
       email: userData.email,
       role: userData.role,
       position: userData.position,
       branches: userData.branches,
+      canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
       isActive: userData.isActive,
       authUID: authUser.uid, // Vincular com o UID do Firebase Auth
       createdAt: Timestamp.now(),
     });
     
     return {
-      id: docRef.id,
+      id: authUser.uid,
+      authUID: authUser.uid,
       name: userData.name,
       email: userData.email,
       role: userData.role,
       position: userData.position,
       branches: userData.branches,
+      canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
       isActive: userData.isActive,
       createdAt: Date.now(),
     };
@@ -301,6 +317,7 @@ export const updateUser = async (userId: string, userData: Omit<User, 'id' | 'cr
       role: userData.role,
       position: userData.position,
       branches: userData.branches,
+      canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
       isActive: userData.isActive,
       updatedAt: Timestamp.now(),
     });
@@ -320,6 +337,7 @@ export const updateUser = async (userId: string, userData: Omit<User, 'id' | 'cr
       role: userData.role,
       position: userData.position,
       branches: userData.branches,
+      canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
       isActive: userData.isActive,
       createdAt: Date.now(), // Será sobrescrito pelo valor real
       updatedAt: Date.now(),
@@ -331,6 +349,47 @@ export const updateUser = async (userId: string, userData: Omit<User, 'id' | 'cr
     }
     throw new Error('Falha ao atualizar usuário');
   }
+};
+
+export const ensureUserDocumentByAuthUID = async (authUID: string, userData: User): Promise<User> => {
+  const userRef = doc(db, 'users', authUID);
+  const existingDoc = await getDoc(userRef);
+  const createdAtMillis = userData.createdAt || Date.now();
+
+  await setDoc(
+    userRef,
+    {
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      position: userData.position,
+      branches: Array.isArray(userData.branches) ? userData.branches : [],
+      canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
+      isActive: userData.isActive !== false,
+      authUID,
+      createdAt: existingDoc.exists()
+        ? existingDoc.data().createdAt || Timestamp.fromMillis(createdAtMillis)
+        : Timestamp.fromMillis(createdAtMillis),
+      updatedAt: Timestamp.now(),
+    },
+    { merge: true }
+  );
+
+  const isLegacyDoc = userData.id !== authUID;
+  if (isLegacyDoc) {
+    try {
+      await deleteDoc(doc(db, 'users', userData.id));
+    } catch (cleanupError) {
+      console.warn('Falha ao limpar documento legado de usuário:', cleanupError);
+    }
+  }
+
+  return {
+    ...userData,
+    id: authUID,
+    authUID,
+    canAccessMN10: userData.role === 'admin' ? true : userData.canAccessMN10 === true,
+  };
 };
 
 export const deleteUser = async (userId: string): Promise<void> => {

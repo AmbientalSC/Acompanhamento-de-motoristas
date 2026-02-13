@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasMn10Access() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.canAccessMN10 == true ||
+        (
+          firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+          (
+            userProfile().role == 'admin' ||
+            userProfile().canAccessMN10 == true
+          )
+        )
+      );
+    }
+
+    function isPublishedForm(formId) {
+      return firestore.exists(/databases/(default)/documents/mn10Forms/$(formId)) &&
+        firestore.get(/databases/(default)/documents/mn10Forms/$(formId)).data.status == 'published';
+    }
+
+    function isAllowedUpload() {
+      return request.resource != null &&
+        request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.contentType != null &&
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf'
+        );
+    }
+
+    match /mn10/uploads/{formId}/{responseId}/{questionId}/{fileName} {
+      allow create: if isAllowedUpload() && isPublishedForm(formId);
+      allow read, delete: if hasMn10Access();
+      allow update: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
