@@ -31,7 +31,9 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
         criteria: data.criteria || [], // Compatibilidade com dados antigos
         criteriaConfig: data.criteriaConfig || undefined, // Nova estrutura
         includeHeader: data.includeHeader,
+        headerType: data.headerType,
         includeFinalConsiderations: data.includeFinalConsiderations,
+        isFormOnly: data.isFormOnly,
       });
     });
     
@@ -44,17 +46,19 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
 
 export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>): Promise<EvaluationTemplate> => {
   try {
-    const dataToSave = {
+    const dataToSave: any = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
       includeHeader: templateData.includeHeader,
+      headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
+      isFormOnly: templateData.isFormOnly,
       createdAt: Timestamp.now(),
     };
     
     // Adicionar criteriaConfig se existir
     if (templateData.criteriaConfig) {
-      (dataToSave as any).criteriaConfig = templateData.criteriaConfig;
+      dataToSave.criteriaConfig = templateData.criteriaConfig;
     }
     
     const docRef = await addDoc(collection(db, 'templates'), dataToSave);
@@ -65,7 +69,9 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
       includeHeader: templateData.includeHeader,
+      headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
+      isFormOnly: templateData.isFormOnly,
     };
   } catch (error) {
     console.error('Erro ao salvar modelo:', error);
@@ -77,17 +83,19 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
   try {
     const templateRef = doc(db, 'templates', templateId);
     
-    const dataToUpdate = {
+    const dataToUpdate: any = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
       includeHeader: templateData.includeHeader,
+      headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
+      isFormOnly: templateData.isFormOnly,
       updatedAt: Timestamp.now(),
     };
     
     // Adicionar criteriaConfig se existir
     if (templateData.criteriaConfig) {
-      (dataToUpdate as any).criteriaConfig = templateData.criteriaConfig;
+      dataToUpdate.criteriaConfig = templateData.criteriaConfig;
     }
     
     await updateDoc(templateRef, dataToUpdate);
@@ -98,7 +106,9 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
       includeHeader: templateData.includeHeader,
+      headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
+      isFormOnly: templateData.isFormOnly,
     };
   } catch (error) {
     console.error('Erro ao atualizar modelo:', error);
