@@ -234,7 +234,7 @@ export class PDFService {
 
     // Média geral com status
   const avg = evaluation.averageScore ?? 0;
-  const status = getEvaluationStatus(avg);
+  const status = getEvaluationStatus(avg, evaluation.ratingScale);
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.text(`MÉDIA GERAL: ${avg.toFixed(2)} (${status.label})`, margin, yPosition);
@@ -451,7 +451,7 @@ export class PDFService {
       }
       
       const date = new Date(evaluation.data).toLocaleDateString('pt-BR');
-  const status = getEvaluationStatus(evaluation.averageScore ?? 0);
+  const status = getEvaluationStatus(evaluation.averageScore ?? 0, evaluation.ratingScale);
       
       pdf.text(date, margin + 2, yPosition);
       pdf.text(evaluation.filial, margin + 35, yPosition);

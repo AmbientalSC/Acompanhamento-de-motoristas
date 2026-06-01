@@ -1,6 +1,6 @@
 
 // Tipos de campo disponíveis
-export type FieldType = 'rating' | 'text' | 'radio' | 'date' | 'checkbox';
+export type FieldType = 'rating' | 'rating-5' | 'text' | 'radio' | 'date' | 'checkbox';
 
 // Opção para campos do tipo rádio
 export interface RadioOption {
@@ -64,6 +64,7 @@ export interface Evaluation {
   scores: Record<string, number>; // Scores dinâmicos baseados nos critérios do modelo
   fieldValues?: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
   averageScore?: number; // Opcional - undefined para formulários sem cabeçalho
+  ratingScale?: '1-5' | '0-10'; // Escala usada pelo template (1-5 ou 0-10)
   pros: string;
   contras: string;
   consideracoes: string;

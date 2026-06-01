@@ -5,6 +5,7 @@ import RadioGroup from './RadioGroup';
 import DateInput from './DateInput';
 import Checkbox from './Checkbox';
 import RatingSlider from '../RatingSlider';
+import RatingSlider5 from './RatingSlider5';
 
 interface DynamicFieldProps {
   criterion: EvaluationCriterion;
@@ -37,6 +38,20 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
             {required && value === 0 && (
               <p className="text-sm text-red-600">Este campo é obrigatório</p>
             )}
+          </div>
+        );
+
+      case 'rating-5':
+        return (
+          <div className="space-y-2">
+            {description && (
+              <p className="text-sm text-gray-500 mb-2">{description}</p>
+            )}
+            <RatingSlider5
+              label={name}
+              value={value || 1}
+              onChange={onChange}
+            />
           </div>
         );
 

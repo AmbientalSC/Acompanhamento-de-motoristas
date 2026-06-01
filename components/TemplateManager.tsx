@@ -559,6 +559,7 @@ const TemplateManager: React.FC = () => {
                               required
                             >
                               <option value="rating">Avaliação (1-10)</option>
+                              <option value="rating-5">Avaliação (1-5)</option>
                               <option value="text">Texto</option>
                               <option value="radio">Múltipla Escolha</option>
                               <option value="date">Data</option>
@@ -1122,7 +1123,8 @@ const TemplateManager: React.FC = () => {
                                     <span className="text-red-500 font-bold">*</span>
                                   )}
                                   <span className="text-gray-400 uppercase text-xs">
-                                    {criterion.type === 'rating' ? 'AVAL' : 
+                                    {criterion.type === 'rating' ? 'AVAL' :
+                                     criterion.type === 'rating-5' ? 'AVAL 1-5' :
                                      criterion.type === 'text' ? 'TEXTO' :
                                      criterion.type === 'radio' ? 'OPÇÃO' :
                                      criterion.type === 'date' ? 'DATA' :

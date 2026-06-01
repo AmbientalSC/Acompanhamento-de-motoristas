@@ -211,22 +211,18 @@ const DriverDashboard: React.FC = () => {
     }
   };
   
-  const renderAverageStatus = (score: number | undefined) => {
+  const renderAverageStatus = (score: number | undefined, scale?: string) => {
     if (score === undefined || score === null) return null;
-    
-    if (score > 7) {
-      return <div className="flex items-center gap-2 text-green-600"><CheckCircle className="h-6 w-6" /> <span className="font-bold text-lg">Aprovado ({score.toFixed(2)})</span></div>;
-    }
-    if (score >= 6) {
-      return <div className="flex items-center gap-2 text-yellow-500"><Clock className="h-6 w-6" /> <span className="font-bold text-lg">Reavaliar ({score.toFixed(2)})</span></div>;
-    }
-    return <div className="flex items-center gap-2 text-red-600"><AlertCircle className="h-6 w-6" /> <span className="font-bold text-lg">Reprovado ({score.toFixed(2)})</span></div>;
+    const status = getEvaluationStatus(score, scale);
+    const IconComponent = status.icon === 'CheckCircle' ? CheckCircle : 
+                         status.icon === 'Clock' ? Clock : AlertCircle;
+    return <div className={`flex items-center gap-2 ${status.color}`}><IconComponent className="h-6 w-6" /> <span className="font-bold text-lg">{status.label} ({score.toFixed(2)})</span></div>;
   };
 
-  const renderStatusBadge = (score: number | undefined) => {
+  const renderStatusBadge = (score: number | undefined, scale?: string) => {
     if (score === undefined || score === null) return null;
     
-    const status = getEvaluationStatus(score);
+    const status = getEvaluationStatus(score, scale);
     const IconComponent = status.icon === 'CheckCircle' ? CheckCircle : 
                          status.icon === 'Clock' ? Clock : AlertCircle;
     
@@ -346,7 +342,7 @@ const DriverDashboard: React.FC = () => {
                               <p className="font-semibold text-gray-800">Data: {formatDate(evaluation.data)}</p>
                               <p className="text-sm text-gray-500">VT: {evaluation.vt}</p>
                               <div className="mt-2">
-                                {renderStatusBadge(evaluation.averageScore)}
+                                {renderStatusBadge(evaluation.averageScore, evaluation.ratingScale)}
                               </div>
                           </div>
                           <div className="text-right relative">
@@ -381,7 +377,7 @@ const DriverDashboard: React.FC = () => {
                         <p className="text-sm text-gray-500">Usando modelo: {selectedEvaluation.templateName}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      {renderAverageStatus(selectedEvaluation.averageScore)}
+                      {renderAverageStatus(selectedEvaluation.averageScore, selectedEvaluation.ratingScale)}
                       <Button
                         onClick={handleGenerateEvaluationPDF}
                         variant="secondary"

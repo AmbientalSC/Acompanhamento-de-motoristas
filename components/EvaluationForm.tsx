@@ -5,6 +5,7 @@ import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import RatingSlider from './RatingSlider';
+import RatingSlider5 from './ui/RatingSlider5';
 import DynamicField from './ui/DynamicField';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -90,6 +91,8 @@ const EvaluationForm: React.FC = () => {
         template.criteriaConfig.forEach(criterion => {
           if (criterion.type === 'rating') {
             initialScores[criterion.id] = 5;
+          } else if (criterion.type === 'rating-5') {
+            initialScores[criterion.id] = 3;
           } else if (criterion.type === 'checkbox') {
             initialFieldValues[criterion.id] = false;
           } else {
@@ -135,8 +138,10 @@ const EvaluationForm: React.FC = () => {
     
     let ratingFieldsCount: number;
     if (selectedTemplate.criteriaConfig) {
-      // Contar apenas campos do tipo 'rating'
-      ratingFieldsCount = selectedTemplate.criteriaConfig.filter(c => c.type === 'rating').length;
+      // Contar campos dos tipos 'rating' e 'rating-5'
+      ratingFieldsCount = selectedTemplate.criteriaConfig.filter(
+        c => c.type === 'rating' || c.type === 'rating-5'
+      ).length;
     } else {
       // Compatibilidade com templates antigos (todos eram rating)
       ratingFieldsCount = selectedTemplate.criteria.length;
@@ -188,6 +193,13 @@ const EvaluationForm: React.FC = () => {
       evaluationToSave.averageScore = averageScore;
     }
 
+    // Propagar a escala do template para uso nos dashboards
+    if (isPureRating5) {
+      evaluationToSave.ratingScale = '1-5';
+    } else {
+      evaluationToSave.ratingScale = '0-10';
+    }
+
     try {
       await saveEvaluation(evaluationToSave);
       
@@ -224,6 +236,15 @@ const EvaluationForm: React.FC = () => {
     }
   };
   
+  // Determina se o template usa apenas escala 1-5 (para thresholds adaptativos)
+  const isPureRating5 = useMemo(() => {
+    if (!selectedTemplate?.criteriaConfig) return false;
+    const ratingFields = selectedTemplate.criteriaConfig.filter(
+      c => c.type === 'rating' || c.type === 'rating-5'
+    );
+    return ratingFields.length > 0 && ratingFields.every(c => c.type === 'rating-5');
+  }, [selectedTemplate]);
+
   const renderAverageStatus = () => {
     const score = averageScore;
     
@@ -235,15 +256,25 @@ const EvaluationForm: React.FC = () => {
     let statusText: string;
     let statusColor: string;
 
-    if (score > 7) {
-      statusText = 'Aprovado';
-      statusColor = 'text-green-600';
-    } else if (score >= 6) { 
-      statusText = 'Reavaliar';
-      statusColor = 'text-yellow-500';
+    if (isPureRating5) {
+      if (score >= 3) {
+        statusText = 'Aprovado';
+        statusColor = 'text-green-600';
+      } else {
+        statusText = 'Reprovado';
+        statusColor = 'text-red-600';
+      }
     } else {
-      statusText = 'Reprovado';
-      statusColor = 'text-red-600';
+      if (score > 7) {
+        statusText = 'Aprovado';
+        statusColor = 'text-green-600';
+      } else if (score >= 6) { 
+        statusText = 'Reavaliar';
+        statusColor = 'text-yellow-500';
+      } else {
+        statusText = 'Reprovado';
+        statusColor = 'text-red-600';
+      }
     }
     return (
       <div className="flex items-baseline gap-2">
@@ -342,17 +373,17 @@ const EvaluationForm: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 {selectedTemplate.criteriaConfig ? (
                   selectedTemplate.criteriaConfig.map(criterion => {
-                    const fieldValue = criterion.type === 'rating' 
-                      ? (scores[criterion.id] ?? 5) 
+                    const fieldValue = (criterion.type === 'rating' || criterion.type === 'rating-5')
+                      ? (scores[criterion.id] ?? (criterion.type === 'rating-5' ? 3 : 5)) 
                       : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''));
-                    
+
                     return (
                       <DynamicField
                         key={criterion.id}
                         criterion={criterion}
                         value={fieldValue}
                         onChange={(value) => {
-                          if (criterion.type === 'rating') {
+                          if (criterion.type === 'rating' || criterion.type === 'rating-5') {
                             handleScoreChange(criterion.id, value);
                           } else {
                             handleFieldChange(criterion.id, value);
