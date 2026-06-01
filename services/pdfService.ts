@@ -56,12 +56,14 @@ export class PDFService {
       pdf.addImage(logoDataURL, 'PNG', logoX, 10, logoWidth, logoHeight);
       
       // Título do relatório - abaixo da logo centralizada
+      const isRh = !!evaluation.nomeColaborador;
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(isRh ? 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR' : 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
     } catch (error) {
       console.warn('Erro ao carregar logo, usando texto como fallback:', error);
+      const isRh2 = !!evaluation.nomeColaborador;
       // Fallback: texto da logo
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(16);
@@ -72,23 +74,32 @@ export class PDFService {
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(isRh2 ? 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR' : 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
     }
     
     // Posição inicial do conteúdo - ajustada para dar espaço ao cabeçalho
     yPosition = 80;
 
-    // Informações do motorista
+    // Informações
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('INFORMAÇÕES DO MOTORISTA', margin, yPosition);
+    const isRhEval = !!evaluation.nomeColaborador;
+    pdf.text(isRhEval ? 'INFORMAÇÕES DO COLABORADOR' : 'INFORMAÇÕES DO MOTORISTA', margin, yPosition);
     yPosition += 10;
 
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'normal');
     
-    const driverInfo = [
+    const driverInfo = isRhEval ? [
+      { label: 'Nome:', value: evaluation.nomeColaborador || evaluation.motorista },
+      { label: 'Função:', value: evaluation.funcao || '' },
+      { label: 'Turno Principal:', value: evaluation.turnoPrincipal || '' },
+      { label: 'Equipe/Setor:', value: evaluation.equipeSetor || '' },
+      { label: 'Filial:', value: evaluation.filial },
+      { label: 'Data:', value: new Date(evaluation.data).toLocaleDateString('pt-BR') },
+      { label: 'Modelo:', value: evaluation.templateName }
+    ] : [
       { label: 'Nome:', value: evaluation.motorista },
       { label: 'Matrícula:', value: evaluation.matricula },
       { label: 'Setor:', value: evaluation.setor },
@@ -104,8 +115,8 @@ export class PDFService {
       pdf.text(info.label, margin, yPosition);
       pdf.setFont('helvetica', 'normal');
       
-      // Ajuste especial para "Modelo de Avaliação" - quebra de linha se necessário
-      if (info.label === 'Modelo de Avaliação:') {
+      // Ajuste especial para labels longos - quebra de linha se necessário
+      if (info.label === 'Modelo de Avaliação:' || info.label === 'Modelo:') {
         const maxWidth = contentWidth - 60; // Espaço disponível após o label
         const valueLines = this.splitTextToFit(info.value, maxWidth);
         
@@ -343,12 +354,14 @@ export class PDFService {
       pdf.addImage(logoDataURL, 'PNG', logoX, 10, logoWidth, logoHeight);
       
       // Título do relatório - abaixo da logo centralizada
+      const isRhAnalysis = !!evaluations[0]?.nomeColaborador;
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(isRhAnalysis ? 'ANÁLISE DE DESEMPENHO DO COLABORADOR' : 'ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
     } catch (error) {
       console.warn('Erro ao carregar logo, usando texto como fallback:', error);
+      const isRhAnalysis2 = !!evaluations[0]?.nomeColaborador;
       // Fallback: texto da logo
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(16);
@@ -359,20 +372,21 @@ export class PDFService {
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(isRhAnalysis2 ? 'ANÁLISE DE DESEMPENHO DO COLABORADOR' : 'ANÁLISE DE DESEMPENHO DO MOTORISTA', pageWidth / 2, 50, { align: 'center' });
     }
     
     // Posição inicial do conteúdo - ajustada para dar espaço ao cabeçalho
     yPosition = 80;
 
-    // Informações do motorista
+    // Informações
     const driverName = evaluations[0].motorista;
     const driverMatricula = evaluations[0].matricula;
+    const isRhAnalytics = !!evaluations[0]?.nomeColaborador;
     
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('INFORMAÇÕES DO MOTORISTA', margin, yPosition);
+    pdf.text(isRhAnalytics ? 'INFORMAÇÕES DO COLABORADOR' : 'INFORMAÇÕES DO MOTORISTA', margin, yPosition);
     yPosition += 10;
 
     pdf.setFontSize(12);
@@ -382,12 +396,29 @@ export class PDFService {
     pdf.setFont('helvetica', 'normal');
     pdf.text(driverName, margin + 40, yPosition);
     yPosition += 8;
+
+    if (isRhAnalytics && evaluations[0]?.funcao) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Função:', margin, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(evaluations[0].funcao, margin + 40, yPosition);
+      yPosition += 8;
+    }
     
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Matrícula:', margin, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(driverMatricula, margin + 40, yPosition);
-    yPosition += 15;
+    if (isRhAnalytics) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Equipe/Setor:', margin, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(evaluations[0].equipeSetor || '', margin + 40, yPosition);
+      yPosition += 8;
+    } else {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Matrícula:', margin, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(driverMatricula, margin + 40, yPosition);
+      yPosition += 8;
+    }
+    yPosition += 7;
 
     // Estatísticas gerais
   const totalEvaluations = evaluations.length;

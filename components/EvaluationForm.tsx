@@ -13,7 +13,7 @@ import Input from './ui/Input';
 import Textarea from './ui/Textarea';
 import Select from './ui/Select';
 
-const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'templateId' | 'templateName'> => ({
+const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'templateId' | 'templateName'> & { nomeColaborador?: string; funcao?: string; turnoPrincipal?: string; equipeSetor?: string } => ({
     matricula: '',
     setor: '',
     turno: '',
@@ -25,6 +25,10 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'te
     pros: '',
     contras: '',
     consideracoes: '',
+    nomeColaborador: '',
+    funcao: '',
+    turnoPrincipal: '',
+    equipeSetor: '',
 });
 
 const EvaluationForm: React.FC = () => {
@@ -133,8 +137,8 @@ const EvaluationForm: React.FC = () => {
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
     
-    // Se o template não inclui cabeçalho, não deve ter averageScore
-    if (selectedTemplate.includeHeader === false) return undefined;
+    // Se o template não tem cabeçalho, não deve ter averageScore
+    if (!selectedTemplate.headerType) return undefined;
     
     let ratingFieldsCount: number;
     if (selectedTemplate.criteriaConfig) {
@@ -176,20 +180,29 @@ const EvaluationForm: React.FC = () => {
       fieldValuesWithNames[fieldName] = value;
     });
     
+    const hasHeader = selectedTemplate.headerType !== undefined;
+    const isRhHeader = selectedTemplate.headerType === 'rh';
+    
     const evaluationToSave: any = {
         ...formData,
         scores,
         fieldValues: fieldValuesWithNames,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
-        // Para formulários sem cabeçalho, garantir que motorista seja uma string descritiva
-        motorista: selectedTemplate.includeHeader === false ? 
+        motorista: !hasHeader ? 
                    `Formulário ${selectedTemplate.name}` : 
-                   formData.motorista,
+                   (isRhHeader ? formData.nomeColaborador || '' : formData.motorista),
     };
 
+    if (isRhHeader) {
+      evaluationToSave.nomeColaborador = formData.nomeColaborador || '';
+      evaluationToSave.funcao = formData.funcao || '';
+      evaluationToSave.turnoPrincipal = formData.turnoPrincipal || '';
+      evaluationToSave.equipeSetor = formData.equipeSetor || '';
+    }
+
     // Só adicionar averageScore se o template incluir cabeçalho E houver campos de rating
-    if (selectedTemplate.includeHeader !== false && averageScore !== undefined && averageScore !== null) {
+    if (hasHeader && averageScore !== undefined && averageScore !== null) {
       evaluationToSave.averageScore = averageScore;
     }
 
@@ -328,7 +341,7 @@ const EvaluationForm: React.FC = () => {
                 Trocar Modelo
             </Button>
         </div>
-        {selectedTemplate?.includeHeader === true && (
+        {selectedTemplate?.headerType === 'evaluation' && (
           <div className="p-6">
             <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho da Avaliação</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -361,6 +374,41 @@ const EvaluationForm: React.FC = () => {
                 ))}
               </Select>
               <Input label="Data do Acompanhamento" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
+            </div>
+          </div>
+        )}
+        {selectedTemplate?.headerType === 'rh' && (
+          <div className="p-6">
+            <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho de RH</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <Input label="Nome do Colaborador" name="nomeColaborador" value={formData.nomeColaborador || ''} onChange={handleInputChange} required />
+              <Input label="Função" name="funcao" value={formData.funcao || ''} onChange={handleInputChange} />
+              <Select
+                label="Turno Principal"
+                name="turnoPrincipal"
+                value={formData.turnoPrincipal || ''}
+                onChange={handleInputChange}
+              >
+                <option value="">Selecione o turno</option>
+                <option value="Manhã">Manhã</option>
+                <option value="Tarde">Tarde</option>
+                <option value="Noite">Noite</option>
+              </Select>
+              <Input label="Equipe/Setor" name="equipeSetor" value={formData.equipeSetor || ''} onChange={handleInputChange} />
+              <Select
+                label="Filial"
+                name="filial"
+                value={formData.filial}
+                onChange={handleInputChange}
+                required
+                disabled={isLoadingBranches}
+              >
+                <option value="">Selecione a filial</option>
+                {sortedBranches.map(branch => (
+                  <option key={branch} value={branch}>{branch}</option>
+                ))}
+              </Select>
+              <Input label="Data" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
             </div>
           </div>
         )}
@@ -421,10 +469,12 @@ const EvaluationForm: React.FC = () => {
         </Card>
       )}
 
-      {selectedTemplate?.includeHeader === true && (
+      {(selectedTemplate?.headerType === 'evaluation' || selectedTemplate?.headerType === 'rh') && (
         <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
-            <span className="text-lg font-medium text-gray-600">Média Geral do Motorista:</span>
+            <span className="text-lg font-medium text-gray-600">
+              {selectedTemplate.headerType === 'rh' ? 'Média Geral do Colaborador:' : 'Média Geral do Motorista:'}
+            </span>
             {renderAverageStatus()}
           </div>
           <div className="flex items-center gap-4 w-full md:w-auto">
@@ -440,7 +490,7 @@ const EvaluationForm: React.FC = () => {
         </div>
       )}
 
-      {selectedTemplate?.includeHeader === false && (
+      {selectedTemplate && !selectedTemplate.headerType && selectedTemplate.includeHeader === false && (
         <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
           <Button type="button" onClick={resetForm} variant="secondary">
             <RotateCcw className="h-4 w-4 mr-2" />
@@ -454,7 +504,7 @@ const EvaluationForm: React.FC = () => {
       )}
 
       {/* Fallback para templates antigos sem configuração definida */}
-      {selectedTemplate && selectedTemplate.includeHeader !== true && selectedTemplate.includeHeader !== false && (
+      {selectedTemplate && !selectedTemplate.headerType && selectedTemplate.includeHeader !== true && selectedTemplate.includeHeader !== false && (
         <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
           <Button type="button" onClick={resetForm} variant="secondary">
             <RotateCcw className="h-4 w-4 mr-2" />

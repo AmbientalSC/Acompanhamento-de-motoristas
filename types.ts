@@ -44,6 +44,7 @@ export interface EvaluationTemplate {
   criteria: string[]; // Mantido para compatibilidade com dados existentes
   criteriaConfig?: EvaluationCriterion[]; // Nova estrutura com configurações
   includeHeader?: boolean; // Se deve incluir cabeçalho de avaliação (motorista, filial, etc)
+  headerType?: 'evaluation' | 'rh'; // Tipo de cabeçalho (avaliação ou RH)
   includeFinalConsiderations?: boolean; // Se deve incluir campo de considerações finais
   isFormOnly?: boolean; // Se é apenas um formulário (sem avaliação)
 }
@@ -65,6 +66,10 @@ export interface Evaluation {
   fieldValues?: Record<string, any>; // Valores dos campos customizados (texto, data, radio, etc)
   averageScore?: number; // Opcional - undefined para formulários sem cabeçalho
   ratingScale?: '1-5' | '0-10'; // Escala usada pelo template (1-5 ou 0-10)
+  nomeColaborador?: string; // Nome do colaborador (cabeçalho RH)
+  funcao?: string; // Função/cargo (cabeçalho RH)
+  turnoPrincipal?: string; // Turno principal (cabeçalho RH)
+  equipeSetor?: string; // Equipe/setor (cabeçalho RH)
   pros: string;
   contras: string;
   consideracoes: string;

@@ -28,7 +28,7 @@ const TemplateManager: React.FC = () => {
     required: false, 
     type: 'rating' 
   }]);
-  const [includeHeader, setIncludeHeader] = useState(true);
+  const [headerType, setHeaderType] = useState<'evaluation' | 'rh' | undefined>('evaluation');
   const [includeFinalConsiderations, setIncludeFinalConsiderations] = useState(true);
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -166,7 +166,7 @@ const TemplateManager: React.FC = () => {
       required: false, 
       type: 'rating' 
     }]);
-    setIncludeHeader(true);
+    setHeaderType('evaluation');
     setIncludeFinalConsiderations(true);
   };
 
@@ -176,7 +176,14 @@ const TemplateManager: React.FC = () => {
     setTemplateName(template.name);
     
     // Carregar configurações do template
-    setIncludeHeader(template.includeHeader === true);
+    // Deriva headerType: novo campo tem prioridade, senão usa includeHeader como fallback
+    if (template.headerType) {
+      setHeaderType(template.headerType);
+    } else if (template.includeHeader === false) {
+      setHeaderType(undefined);
+    } else {
+      setHeaderType('evaluation');
+    }
     setIncludeFinalConsiderations(template.includeFinalConsiderations === true);
     
     // Converter criteria antigas para nova estrutura se necessário
@@ -248,6 +255,7 @@ const TemplateManager: React.FC = () => {
     }
 
     setIsSaving(true);
+    const hasHeader = headerType !== undefined;
     const templateData = {
       name: templateName.trim(),
       criteria: criteriaConfig.map(c => c.name.trim()).filter(Boolean), // Compatibilidade
@@ -260,9 +268,10 @@ const TemplateManager: React.FC = () => {
         placeholder: c.placeholder || '',
         description: c.description || ''
       })).filter(c => c.name),
-      includeHeader,
+      includeHeader: hasHeader,
+      headerType,
       includeFinalConsiderations,
-      isFormOnly: !includeHeader, // Se não incluir cabeçalho, é apenas formulário
+      isFormOnly: !hasHeader,
     };
     
     try {
@@ -498,22 +507,69 @@ const TemplateManager: React.FC = () => {
               <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-800 mb-3">Configurações do Formulário</h3>
                 <div className="space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      id="includeHeader"
-                      type="checkbox"
-                      checked={includeHeader}
-                      onChange={(e) => setIncludeHeader(e.target.checked)}
-                      className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-                    />
-                    <label htmlFor="includeHeader" className="ml-2 block text-sm text-gray-700">
-                      <span className="font-medium">Incluir cabeçalho de avaliação</span>
-                      <span className="block text-xs text-gray-500">
-                        Dados do motorista, filial, veículo e média geral. Desmarque para criar apenas um formulário simples.
-                      </span>
-                    </label>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Cabeçalho</p>
+                    <div className="space-y-2">
+                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                        headerType === undefined
+                          ? 'border-brand-primary bg-brand-light'
+                          : 'border-gray-200 hover:bg-gray-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="headerType"
+                          checked={headerType === undefined}
+                          onChange={() => setHeaderType(undefined)}
+                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                        />
+                        <div className="ml-3">
+                          <span className="text-sm font-medium text-gray-700">Sem cabeçalho</span>
+                          <span className="block text-xs text-gray-500">
+                            Apenas os campos do formulário, sem dados de identificação. Ideal para pesquisas e formulários simples.
+                          </span>
+                        </div>
+                      </label>
+                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                        headerType === 'evaluation'
+                          ? 'border-brand-primary bg-brand-light'
+                          : 'border-gray-200 hover:bg-gray-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="headerType"
+                          checked={headerType === 'evaluation'}
+                          onChange={() => setHeaderType('evaluation')}
+                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                        />
+                        <div className="ml-3">
+                          <span className="text-sm font-medium text-gray-700">Cabeçalho de Avaliação</span>
+                          <span className="block text-xs text-gray-500">
+                            Campos: Matrícula, Motorista, Setor, Turno, Filial, VT, Data e Média Geral.
+                          </span>
+                        </div>
+                      </label>
+                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                        headerType === 'rh'
+                          ? 'border-brand-primary bg-brand-light'
+                          : 'border-gray-200 hover:bg-gray-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="headerType"
+                          checked={headerType === 'rh'}
+                          onChange={() => setHeaderType('rh')}
+                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                        />
+                        <div className="ml-3">
+                          <span className="text-sm font-medium text-gray-700">Cabeçalho de RH</span>
+                          <span className="block text-xs text-gray-500">
+                            Campos: Nome do Colaborador, Função, Turno Principal, Equipe/Setor, Filial, Data e Média Geral.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
                   </div>
-                  
+
                   <div className="flex items-center">
                     <input
                       id="includeFinalConsiderations"
@@ -731,14 +787,36 @@ const TemplateManager: React.FC = () => {
                         <div className="flex-grow min-w-0">
                           <div className="flex items-center gap-2 mb-2">
                             <p className="font-semibold text-gray-800">{template.name}</p>
-                            {template.includeHeader === false && (
+                            {template.headerType ? (
+                              <>
+                                {template.headerType === 'evaluation' && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Avaliação
+                                  </span>
+                                )}
+                                {template.headerType === 'rh' && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    RH
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {template.includeHeader === false && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Formulário
+                                  </span>
+                                )}
+                                {template.includeHeader === true && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Avaliação
+                                  </span>
+                                )}
+                              </>
+                            )}
+                            {template.headerType === undefined && template.includeHeader !== true && template.includeHeader !== false && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 Formulário
-                              </span>
-                            )}
-                            {template.includeHeader === true && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Avaliação
                               </span>
                             )}
                           </div>
@@ -1100,9 +1178,9 @@ const TemplateManager: React.FC = () => {
                 <div className="flex justify-center items-center h-24">
                   <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
                 </div>
-              ) : templates.filter(t => t.includeHeader === false).length > 0 ? (
+              ) : templates.filter(t => !t.headerType && t.includeHeader === false).length > 0 ? (
                 <ul className="space-y-3">
-                  {templates.filter(t => t.includeHeader === false).map(template => (
+                  {templates.filter(t => !t.headerType && t.includeHeader === false).map(template => (
                     <li key={template.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
                         <div className="flex-grow min-w-0">

@@ -175,6 +175,13 @@ const DriverDashboard: React.FC = () => {
     return criterionId;
   };
 
+  const selectedTemplate = useMemo(() => {
+    if (!selectedEvaluation) return undefined;
+    return templates.find(t => t.id === selectedEvaluation.templateId);
+  }, [selectedEvaluation, templates]);
+
+  const isRhEval = selectedTemplate?.headerType === 'rh';
+
   const summaryChartData = useMemo(() => {
     if (!selectedEvaluation?.scores) return [];
     return Object.entries(selectedEvaluation.scores).map(([criterion, score]) => ({
@@ -340,7 +347,11 @@ const DriverDashboard: React.FC = () => {
                       <div className="flex justify-between items-start">
                           <div className="flex-1">
                               <p className="font-semibold text-gray-800">Data: {formatDate(evaluation.data)}</p>
-                              <p className="text-sm text-gray-500">VT: {evaluation.vt}</p>
+                              {evaluation.vt ? (
+                                <p className="text-sm text-gray-500">VT: {evaluation.vt}</p>
+                              ) : evaluation.funcao ? (
+                                <p className="text-sm text-gray-500">Função: {evaluation.funcao}</p>
+                              ) : null}
                               <div className="mt-2">
                                 {renderStatusBadge(evaluation.averageScore, evaluation.ratingScale)}
                               </div>
@@ -394,32 +405,51 @@ const DriverDashboard: React.FC = () => {
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Informações da Avaliação</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
                       <div>
-                        <span className="text-gray-600">Motorista:</span>
+                        <span className="text-gray-600">{isRhEval ? 'Colaborador:' : 'Motorista:'}</span>
                         <p className="font-medium text-gray-900">{selectedEvaluation.motorista}</p>
                       </div>
                       <div>
                         <span className="text-gray-600">Filial:</span>
                         <p className="font-medium text-gray-900">{selectedEvaluation.filial}</p>
                       </div>
-                      <div>
-                        <span className="text-gray-600">Turno:</span>
-                        <p className="font-medium text-gray-900">{selectedEvaluation.turno}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Setor:</span>
-                        <p className="font-medium text-gray-900">{selectedEvaluation.setor}</p>
-                      </div>
-                      {selectedEvaluation.matricula && (
-                        <div>
-                          <span className="text-gray-600">Matrícula:</span>
-                          <p className="font-medium text-gray-900">{selectedEvaluation.matricula}</p>
-                        </div>
-                      )}
-                      {selectedEvaluation.vt && (
-                        <div>
-                          <span className="text-gray-600">Viatura:</span>
-                          <p className="font-medium text-gray-900">{selectedEvaluation.vt}</p>
-                        </div>
+                      {isRhEval ? (
+                        <>
+                          <div>
+                            <span className="text-gray-600">Função:</span>
+                            <p className="font-medium text-gray-900">{selectedEvaluation.funcao || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Turno Principal:</span>
+                            <p className="font-medium text-gray-900">{selectedEvaluation.turnoPrincipal || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Equipe/Setor:</span>
+                            <p className="font-medium text-gray-900">{selectedEvaluation.equipeSetor || '-'}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="text-gray-600">Turno:</span>
+                            <p className="font-medium text-gray-900">{selectedEvaluation.turno}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Setor:</span>
+                            <p className="font-medium text-gray-900">{selectedEvaluation.setor}</p>
+                          </div>
+                          {selectedEvaluation.matricula && (
+                            <div>
+                              <span className="text-gray-600">Matrícula:</span>
+                              <p className="font-medium text-gray-900">{selectedEvaluation.matricula}</p>
+                            </div>
+                          )}
+                          {selectedEvaluation.vt && (
+                            <div>
+                              <span className="text-gray-600">Viatura:</span>
+                              <p className="font-medium text-gray-900">{selectedEvaluation.vt}</p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

@@ -150,11 +150,12 @@ const GeneralDashboard: React.FC = () => {
     // Performance by Shift
     const shiftStats: { [key: string]: { totalScore: number; count: number } } = {};
     filteredEvaluations.forEach(evaluation => {
-      if (!shiftStats[evaluation.turno]) {
-        shiftStats[evaluation.turno] = { totalScore: 0, count: 0 };
+      const turno = evaluation.turnoPrincipal || evaluation.turno || 'Não informado';
+      if (!shiftStats[turno]) {
+        shiftStats[turno] = { totalScore: 0, count: 0 };
       }
-      shiftStats[evaluation.turno].totalScore += (evaluation.averageScore || 0);
-      shiftStats[evaluation.turno].count++;
+      shiftStats[turno].totalScore += (evaluation.averageScore || 0);
+      shiftStats[turno].count++;
     });
 
     const performanceByShift = Object.entries(shiftStats).map(([shift, stats]) => ({
