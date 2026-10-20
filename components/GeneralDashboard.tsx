@@ -1,19 +1,119 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Users, Building, FileSpreadsheet, Clock, Filter, X } from 'lucide-react';
+import Icon from './ui/Icon';
+import type { IconName } from './ui/iconNames';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Select from './ui/Select';
+import Input from './ui/Input';
+
+const MOBILE_QUERY = '(max-width: 639px)';
+
+// Paleta dos gráficos: marca Ambiental nas séries; verde/vermelho continuam sendo a semântica de nota boa/ruim.
+const BRAND_BLUE = '#164194';
+const SCORE_GOOD_COLOR = '#63B869';
+const SCORE_BAD_COLOR = '#DC2626';
+const PIE_COLORS = ['#164194', '#A8C950', '#7C91BB', '#63B869', '#003087', '#95C11F'];
+
+const CHART_ROW_HEIGHT = 40;
+
+interface ScoreDatum {
+  name: string;
+  Média: number;
+}
+
+const getMatches = (query: string): boolean =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(query).matches;
+
+// Inicializa já com o valor real (sem flash do layout errado na primeira renderização)
+const useMediaQuery = (query: string): boolean => {
+  const [matches, setMatches] = useState<boolean>(() => getMatches(query));
+
+  useEffect(() => {
+    const mediaQueryList = window.matchMedia(query);
+    const handleChange = () => setMatches(mediaQueryList.matches);
+    handleChange();
+    mediaQueryList.addEventListener('change', handleChange);
+    return () => mediaQueryList.removeEventListener('change', handleChange);
+  }, [query]);
+
+  return matches;
+};
+
+const truncateLabel = (value: string, maxChars: number): string =>
+  value.length > maxChars ? `${value.slice(0, maxChars - 3)}...` : value;
+
+const formatDate = (dateString: string) => {
+  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return dateString;
+  }
+  const [year, month, day] = dateString.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+interface KpiCardProps {
+  icon: IconName;
+  label: string;
+  value: string | number;
+}
+
+// No celular o cartão fica compacto (rótulo à esquerda, número à direita); a partir de sm o número vai abaixo do rótulo.
+const KpiCard: React.FC<KpiCardProps> = ({ icon, label, value }) => (
+  <Card className="flex items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:p-6">
+    <div className="flex-shrink-0 rounded-full bg-brand-light p-2 sm:p-3">
+      <Icon name={icon} className="h-6 w-6 lg:h-8 lg:w-8 text-brand-primary" />
+    </div>
+    <div className="flex min-w-0 flex-1 items-baseline justify-between gap-3 sm:block">
+      <p className="text-sm font-medium text-gray-600">{label}</p>
+      <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{value}</p>
+    </div>
+  </Card>
+);
+
+interface HorizontalScoreChartProps {
+  data: ScoreDatum[];
+  barKey: string;
+  fillColor: string;
+  isMobile: boolean;
+}
+
+// Barras horizontais: o eixo Y (nomes) ocupa só a largura do próprio eixo (margin.left 0) e a altura cresce com o número de itens.
+const HorizontalScoreChart: React.FC<HorizontalScoreChartProps> = ({ data, barKey, fillColor, isMobile }) => {
+  const height = Math.max(isMobile ? 192 : 256, data.length * CHART_ROW_HEIGHT);
+  const maxChars = isMobile ? 14 : 22;
+
+  return (
+    <div className="w-full" style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+          <XAxis type="number" domain={[0, 10]} tick={{ fontSize: 11 }} />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={isMobile ? 100 : 140}
+            tick={{ fontSize: 11 }}
+            interval={0}
+            tickFormatter={(value: string) => truncateLabel(value, maxChars)}
+          />
+          <Tooltip formatter={(value: number) => value.toFixed(2)} contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }} />
+          <Bar dataKey={barKey} fill={fillColor} background={{ fill: '#eee' }} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 const GeneralDashboard: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+
   // Estados dos filtros
   const [filters, setFilters] = useState({
     filial: '',
@@ -47,20 +147,20 @@ const GeneralDashboard: React.FC = () => {
     return evaluations.filter(evaluation => {
       // Excluir formulários puros (sem averageScore) - só incluir avaliações reais
       if (evaluation.averageScore === undefined || evaluation.averageScore === null) return false;
-      
+
       // Filtro por filial
       if (filters.filial && evaluation.filial !== filters.filial) return false;
-      
+
       // Filtro por turno
       if (filters.turno && evaluation.turno !== filters.turno) return false;
-      
+
       // Filtro por modelo de checklist
       if (filters.templateId && evaluation.templateId !== filters.templateId) return false;
-      
+
       // Filtro por intervalo de data
       if (filters.dataInicio && evaluation.data < filters.dataInicio) return false;
       if (filters.dataFim && evaluation.data > filters.dataFim) return false;
-      
+
       return true;
     });
   }, [evaluations, filters]);
@@ -90,7 +190,8 @@ const GeneralDashboard: React.FC = () => {
     });
   };
 
-  const hasActiveFilters = Object.values(filters).some(value => value !== '');
+  const activeFiltersCount = Object.values(filters).filter(value => value !== '').length;
+  const hasActiveFilters = activeFiltersCount > 0;
 
   // Função para mapear IDs de critérios para nomes legíveis
   const getCriterionName = (criterionId: string, templateId: string): string => {
@@ -173,33 +274,21 @@ const GeneralDashboard: React.FC = () => {
       performanceByShift,
     };
   }, [filteredEvaluations, templates]);
-  
-  const PIE_COLORS = ['#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
 
-  const renderChart = (title: string, data: any[], barKey: string, fillColor: string, icon: React.ReactNode) => (
+  const renderChart = (title: string, data: ScoreDatum[], barKey: string, fillColor: string, icon: React.ReactNode) => (
     <Card>
         <div className="p-4 sm:p-6">
             <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">{icon}{title}</h3>
-            <div className="h-48 sm:h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, left: 80, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
-                        <XAxis type="number" domain={[0, 10]} />
-                        <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} interval={0} />
-                        <Tooltip formatter={(value: number) => value.toFixed(2)} contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }} />
-                        <Bar dataKey={barKey} fill={fillColor} background={{ fill: '#eee' }} />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
+            <HorizontalScoreChart data={data} barKey={barKey} fillColor={fillColor} isMobile={isMobile} />
         </div>
     </Card>
   );
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-12 w-12 animate-spin text-brand-primary" />
-        <p className="ml-4 text-lg text-gray-600">Analisando dados...</p>
+      <div role="status" className="flex h-64 items-center justify-center gap-3 sm:gap-4">
+        <Icon name="loader-2" className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-brand-primary" />
+        <p className="text-base sm:text-lg text-gray-600">Analisando dados...</p>
       </div>
     );
   }
@@ -208,49 +297,58 @@ const GeneralDashboard: React.FC = () => {
     return (
       <Card>
         <div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center">
-            <AlertTriangle className="h-12 w-12 sm:h-16 sm:w-16 text-yellow-400 mb-4" />
+            <Icon name="alert-triangle" className="h-12 w-12 sm:h-16 sm:w-16 text-yellow-400 mb-4" />
             <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Nenhuma Avaliação Encontrada</h3>
-            <p className="text-gray-500 mt-2 text-sm sm:text-base">Ainda não há dados para analisar. Comece preenchendo o formulário de avaliação.</p>
+            <p className="text-gray-600 mt-2 text-sm sm:text-base">Ainda não há dados para analisar. Comece preenchendo o formulário de avaliação.</p>
+            {hasActiveFilters && (
+              <Button variant="secondary" className="mt-4" onClick={clearFilters}>
+                <Icon name="x" className="h-4 w-4" />
+                Limpar filtros
+              </Button>
+            )}
         </div>
       </Card>
     );
   }
+
+  // No celular as filiais ficam em linhas horizontais (nomes legíveis); em telas maiores, colunas verticais.
+  const branchData = analytics.performanceByBranch;
 
   return (
     <div className="space-y-4 sm:space-y-6">
         {/* Header com Filtros */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <h2 className="text-xl sm:text-2xl font-bold text-brand-dark">Dashboard Geral</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {hasActiveFilters && (
-              <Button 
-                onClick={clearFilters} 
-                variant="secondary" 
-                className="!py-2 !px-3 text-xs sm:text-sm"
+              <Button
+                onClick={clearFilters}
+                variant="secondary"
+                size="sm"
               >
-                <X className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                <span className="hidden sm:inline">Limpar Filtros</span>
-                <span className="sm:hidden">Limpar</span>
+                <Icon name="x" className="h-4 w-4" />
+                Limpar filtros
               </Button>
             )}
-            <Button 
-              onClick={() => setShowFilters(!showFilters)} 
+            <Button
+              onClick={() => setShowFilters(!showFilters)}
               variant={showFilters ? "primary" : "secondary"}
-              className="!py-2 !px-3 text-xs sm:text-sm"
+              size="sm"
+              aria-expanded={showFilters}
+              aria-controls="dashboard-filters"
             >
-              <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-              <span className="hidden sm:inline">Filtros</span>
-              <span className="sm:hidden">Filtros</span>
+              <Icon name="filter" className="h-4 w-4" />
+              Filtros{hasActiveFilters ? ` (${activeFiltersCount})` : ''}
             </Button>
           </div>
         </div>
 
         {/* Painel de Filtros */}
         {showFilters && (
-          <Card>
+          <Card id="dashboard-filters">
             <div className="p-4 sm:p-6">
               <h3 className="text-base sm:text-lg font-semibold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
-                <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-brand-primary" />
+                <Icon name="filter" className="h-4 w-4 sm:h-5 sm:w-5 text-brand-primary" />
                 Filtros de Análise
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -287,40 +385,30 @@ const GeneralDashboard: React.FC = () => {
                   ))}
                 </Select>
 
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                    Data Início
-                  </label>
-                  <input
-                    type="date"
-                    value={filters.dataInicio}
-                    onChange={(e) => handleFilterChange('dataInicio', e.target.value)}
-                    className="block w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent text-xs sm:text-sm"
-                  />
-                </div>
+                <Input
+                  label="Data Início"
+                  type="date"
+                  value={filters.dataInicio}
+                  onChange={(e) => handleFilterChange('dataInicio', e.target.value)}
+                />
 
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                    Data Fim
-                  </label>
-                  <input
-                    type="date"
-                    value={filters.dataFim}
-                    onChange={(e) => handleFilterChange('dataFim', e.target.value)}
-                    className="block w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent text-xs sm:text-sm"
-                  />
-                </div>
+                <Input
+                  label="Data Fim"
+                  type="date"
+                  value={filters.dataFim}
+                  onChange={(e) => handleFilterChange('dataFim', e.target.value)}
+                />
               </div>
-              
+
               {hasActiveFilters && (
-                <div className="mt-3 sm:mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-xs sm:text-sm text-blue-700">
-                    <strong>Filtros ativos:</strong> 
+                <div className="mt-3 sm:mt-4 p-3 bg-brand-light border border-brand-primary/20 rounded-brand">
+                  <p className="text-sm text-brand-primary break-words">
+                    <strong>Filtros ativos:</strong>
                     {filters.filial && ` Filial: ${filters.filial}`}
                     {filters.turno && ` Turno: ${filters.turno}`}
                     {filters.templateId && ` Modelo: ${templateOptions.find(t => t.id === filters.templateId)?.name}`}
-                    {filters.dataInicio && ` De: ${filters.dataInicio}`}
-                    {filters.dataFim && ` Até: ${filters.dataFim}`}
+                    {filters.dataInicio && ` De: ${formatDate(filters.dataInicio)}`}
+                    {filters.dataFim && ` Até: ${formatDate(filters.dataFim)}`}
                   </p>
                 </div>
               )}
@@ -329,40 +417,16 @@ const GeneralDashboard: React.FC = () => {
         )}
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
-                  <FileSpreadsheet className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
-                </div>
-                <div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Total de Avaliações</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.totalEvaluations}</p>
-                </div>
-            </Card>
-            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
-                 <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
-                   <Users className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
-                 </div>
-                <div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Motoristas Avaliados</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.uniqueDrivers}</p>
-                </div>
-            </Card>
-            <Card className="p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
-                 <div className="p-2 sm:p-3 bg-blue-100 rounded-full">
-                   <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-brand-primary" />
-                 </div>
-                <div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Média Geral</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-brand-dark">{analytics.overallAverage.toFixed(2)}</p>
-                </div>
-            </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+            <KpiCard icon="file-spreadsheet" label="Total de Avaliações" value={analytics.totalEvaluations} />
+            <KpiCard icon="users" label="Motoristas Avaliados" value={analytics.uniqueDrivers} />
+            <KpiCard icon="trending-up" label="Média Geral" value={analytics.overallAverage.toFixed(2)} />
         </div>
 
         {/* Criteria Ranking */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {renderChart('Top 5 Critérios (Maiores Médias)', analytics.top5Criteria, 'Média', '#16A34A', <TrendingUp className="text-green-600"/>)}
-            {renderChart('Top 5 Critérios (Menores Médias)', analytics.bottom5Criteria, 'Média', '#DC2626', <TrendingDown className="text-red-600"/>)}
+            {renderChart('Top 5 Critérios (Maiores Médias)', analytics.top5Criteria, 'Média', SCORE_GOOD_COLOR, <Icon name="trending-up" className="h-5 w-5 flex-shrink-0 text-green-600" />)}
+            {renderChart('Top 5 Critérios (Menores Médias)', analytics.bottom5Criteria, 'Média', SCORE_BAD_COLOR, <Icon name="trending-down" className="h-5 w-5 flex-shrink-0 text-red-600" />)}
         </div>
 
         {/* Performance by Branch and Shift */}
@@ -370,38 +434,67 @@ const GeneralDashboard: React.FC = () => {
             <Card>
                 <div className="p-4 sm:p-6">
                     <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
-                      <Building className="text-brand-primary" />
+                      <Icon name="building" className="h-5 w-5 flex-shrink-0 text-brand-primary" />
                       Desempenho por Filial
                     </h3>
-                    <div className="h-64 sm:h-80">
+                    {isMobile ? (
+                      <HorizontalScoreChart data={branchData} barKey="Média" fillColor={BRAND_BLUE} isMobile />
+                    ) : (
+                      <div className="h-80 w-full">
                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={analytics.performanceByBranch} margin={{ top: 5, right: 20, left: 5, bottom: 50 }}>
+                            <BarChart data={branchData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} interval={0} tick={{ fontSize: 10 }} />
+                                <XAxis
+                                  dataKey="name"
+                                  angle={-45}
+                                  textAnchor="end"
+                                  height={80}
+                                  interval={0}
+                                  tick={{ fontSize: 11 }}
+                                  tickFormatter={(value: string) => truncateLabel(value, 18)}
+                                />
                                 <YAxis domain={[0, 10]}/>
                                 <Tooltip formatter={(value: number) => value.toFixed(2)} contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc' }} />
-                                <Bar dataKey="Média" fill="#1E40AF" />
+                                <Bar dataKey="Média" fill={BRAND_BLUE} />
                             </BarChart>
                         </ResponsiveContainer>
-                    </div>
+                      </div>
+                    )}
                 </div>
             </Card>
              <Card>
                 <div className="p-4 sm:p-6">
                     <h3 className="text-base sm:text-lg font-bold text-brand-dark mb-3 sm:mb-4 flex items-center gap-2">
-                      <Clock className="text-brand-primary" />
+                      <Icon name="clock" className="h-5 w-5 flex-shrink-0 text-brand-primary" />
                       Desempenho por Turno
                     </h3>
-                     <div className="h-64 sm:h-80">
+                     <div className="h-72 sm:h-80">
                          <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie data={analytics.performanceByShift} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${(value || 0).toFixed(2)}`}>
+                                <Pie
+                                  data={analytics.performanceByShift}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={isMobile ? '60%' : 80}
+                                  label={isMobile ? false : ({ name, value }) => `${name}: ${(value || 0).toFixed(2)}`}
+                                >
                                      {analytics.performanceByShift.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                                     ))}
                                 </Pie>
                                 <Tooltip formatter={(value: number) => value.toFixed(2)} />
-                                <Legend />
+                                {/* No celular os rótulos saem das fatias e os valores passam para a legenda, embaixo */}
+                                <Legend
+                                  verticalAlign="bottom"
+                                  formatter={isMobile
+                                    ? (name: string) => {
+                                        const shift = analytics.performanceByShift.find(item => item.name === name);
+                                        return shift ? `${name}: ${shift.value.toFixed(2)}` : name;
+                                      }
+                                    : undefined}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>

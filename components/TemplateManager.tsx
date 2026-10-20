@@ -1,7 +1,7 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { PlusCircle, Trash2, Save, Loader2, FileText, Edit, XCircle, Building, Settings, Users, Download } from 'lucide-react';
-import type { EvaluationTemplate, EvaluationCriterion, User } from '../types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Icon from './ui/Icon';
+import type { IconName } from './ui/iconNames';
+import type { EvaluationTemplate, EvaluationCriterion, FieldType, User } from '../types';
 import { getTemplates, saveTemplate, updateTemplate, deleteTemplate, getBranches, saveBranch, deleteBranch, getUsers, saveUser, updateUser, deleteUser } from '../services/firebaseService';
 import { deleteTemplateImage, uploadTemplateImage, validateTemplateImage } from '../services/templateImageService';
 import { supportsAnswerKey } from '../utils/gradingUtils';
@@ -10,10 +10,154 @@ import Card from './ui/Card';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
+import Checkbox from './ui/Checkbox';
+import ConfirmDialog from './ui/ConfirmDialog';
+import { FIELD_CLASSES } from './ui/fieldStyles';
 import CriterionEditor from './templates/CriterionEditor';
 import { exampleTemplates } from '../data/exampleTemplates';
 
 type SubTab = 'models' | 'branches' | 'users' | 'forms';
+
+// Confirmação pendente (substitui window.confirm): a ação roda ao confirmar e o diálogo mostra o carregamento.
+interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  variant: 'danger' | 'primary';
+  action: () => Promise<void>;
+}
+
+interface SubTabButtonProps {
+  label: string;
+  icon: IconName;
+  isActive: boolean;
+  onSelect: () => void;
+}
+
+// Segmento de 44px+ (ícone sobre o rótulo no celular, lado a lado a partir de `sm`).
+// Definido fora do TemplateManager para não remontar a cada render.
+const SubTabButton: React.FC<SubTabButtonProps> = ({ label, icon, isActive, onSelect }) => (
+  <button
+    type="button"
+    role="tab"
+    aria-selected={isActive}
+    onClick={onSelect}
+    className={`flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-0.5 rounded-brand px-0.5 py-1.5 text-[11px] font-semibold leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-1 sm:min-h-11 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm ${
+      isActive ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-light'
+    }`}
+  >
+    <Icon name={icon} className="h-5 w-5 flex-shrink-0 sm:h-4 sm:w-4" />
+    <span className="max-w-full truncate">{label}</span>
+  </button>
+);
+
+type BadgeTone = 'green' | 'brand' | 'neutral' | 'solid' | 'amber' | 'red';
+
+const BADGE_TONES: Record<BadgeTone, string> = {
+  green: 'bg-green-100 text-green-800',
+  brand: 'bg-brand-light text-brand-primary',
+  neutral: 'bg-gray-100 text-gray-700',
+  solid: 'bg-brand-primary text-white',
+  amber: 'bg-amber-100 text-amber-800',
+  red: 'bg-red-100 text-red-800',
+};
+
+const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode }> = ({ tone, children }) => (
+  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${BADGE_TONES[tone]}`}>
+    {children}
+  </span>
+);
+
+interface RowActionsProps {
+  onEdit: () => void;
+  onDelete: () => void;
+  // Nome do item, usado nos rótulos de acessibilidade ("Editar Filial Norte")
+  itemLabel: string;
+}
+
+// Editar/Excluir lado a lado em largura total no celular (44px) e compactos a partir de `sm`.
+const RowActions: React.FC<RowActionsProps> = ({ onEdit, onDelete, itemLabel }) => (
+  <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-shrink-0 lg:ml-auto">
+    <Button onClick={onEdit} variant="secondary" size="sm" aria-label={`Editar ${itemLabel}`}>
+      <Icon name="pencil" className="h-4 w-4" />
+      Editar
+    </Button>
+    <Button onClick={onDelete} variant="danger" size="sm" aria-label={`Excluir ${itemLabel}`}>
+      <Icon name="trash" className="h-4 w-4" />
+      Excluir
+    </Button>
+  </div>
+);
+
+// Tipo do modelo: `headerType` tem prioridade; `includeHeader` é o campo legado (sem nenhum dos dois = formulário)
+const TemplateKindBadge: React.FC<{ template: EvaluationTemplate }> = ({ template }) => {
+  if (template.headerType === 'evaluation') return <Badge tone="green">Avaliação</Badge>;
+  if (template.headerType === 'rh') return <Badge tone="brand">RH</Badge>;
+  if (template.includeHeader === true) return <Badge tone="green">Avaliação</Badge>;
+  return <Badge tone="neutral">Formulário</Badge>;
+};
+
+const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  rating: 'AVAL',
+  'rating-5': 'AVAL 1-5',
+  text: 'TEXTO',
+  number: 'NÚMERO',
+  radio: 'OPÇÃO',
+  date: 'DATA',
+  checkbox: 'CHECK',
+};
+
+const CHIP_CLASSES = 'inline-flex max-w-full items-center gap-1 text-xs bg-white px-2 py-1 rounded border';
+
+// Resumo dos campos do modelo (formato atual `criteriaConfig`, com fallback para o legado `criteria`)
+const CriteriaChips: React.FC<{ template: EvaluationTemplate; showType?: boolean }> = ({ template, showType = false }) => (
+  <div className="flex flex-wrap gap-1">
+    {template.criteriaConfig
+      ? template.criteriaConfig.map((criterion, index) => (
+          <span key={index} className={CHIP_CLASSES}>
+            <span className="truncate max-w-[9.5rem]" title={criterion.name}>
+              {criterion.name}
+            </span>
+            {criterion.required && <span className="text-red-500 font-bold">*</span>}
+            {showType && (
+              <span className="text-gray-500 uppercase text-xs">{FIELD_TYPE_LABELS[criterion.type || 'rating']}</span>
+            )}
+          </span>
+        ))
+      : template.criteria.map((criterion, index) => (
+          <span key={index} className={CHIP_CLASSES} title={criterion}>
+            <span className="truncate max-w-[9.5rem]">{criterion}</span>
+          </span>
+        ))}
+  </div>
+);
+
+interface FormActionBarProps {
+  isEditing: boolean;
+  isSaving: boolean;
+  saveLabel: string;
+  onCancel: () => void;
+}
+
+// Barra de ações do formulário: fixa acima da navegação inferior no celular, comum a partir de `sm`.
+// O -mx/-mb compensa o padding do <form> (p-4) para a barra encostar nas bordas do cartão.
+const FormActionBar: React.FC<FormActionBarProps> = ({ isEditing, isSaving, saveLabel, onCancel }) => (
+  <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 -mx-4 -mb-4 flex gap-2 rounded-b-lg border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:static sm:z-auto sm:mx-0 sm:mb-0 sm:justify-end sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+    {isEditing && (
+      <Button type="button" onClick={onCancel} variant="secondary" className="flex-1 sm:flex-none">
+        Cancelar<span className="hidden sm:inline">&nbsp;edição</span>
+      </Button>
+    )}
+    <Button type="submit" disabled={isSaving} className={isEditing ? 'flex-[2] sm:flex-none' : 'w-full sm:w-auto'}>
+      {isSaving ? <Icon name="loader-2" className="h-5 w-5 animate-spin" /> : <Icon name="device-floppy" className="h-5 w-5" />}
+      {isSaving ? 'Salvando...' : saveLabel}
+    </Button>
+  </div>
+);
+
+const LIST_ITEM_CLASSES = 'p-4 bg-gray-50 rounded-lg border border-gray-200';
+const CARD_BODY_CLASSES = 'p-4 sm:p-6';
+const SECTION_TITLE_CLASSES = 'text-xl font-bold text-brand-dark flex items-center gap-2 mb-4';
 
 // Imagem escolhida no editor e ainda não enviada ao Storage (chave = id do critério)
 interface PendingImage {
@@ -94,6 +238,23 @@ const TemplateManager: React.FC = () => {
   const [userBranches, setUserBranches] = useState<string[]>([]);
   const [userCanAccessMN10, setUserCanAccessMN10] = useState(false);
   const [userIsActive, setUserIsActive] = useState(true);
+
+  // Confirmação de ações destrutivas/em lote
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  const closeConfirm = useCallback(() => setConfirmRequest(null), []);
+
+  const runConfirmedAction = async () => {
+    if (!confirmRequest) return;
+    setIsConfirming(true);
+    try {
+      await confirmRequest.action();
+    } finally {
+      setIsConfirming(false);
+      setConfirmRequest(null);
+    }
+  };
 
   useEffect(() => {
     if (activeSubTab === 'models' || activeSubTab === 'forms') {
@@ -349,21 +510,29 @@ const TemplateManager: React.FC = () => {
     setCriteriaConfig(newCriteria);
   };
 
-  const handleDelete = async (templateId: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este modelo? Esta ação não pode ser desfeita.')) {
-        try {
-            const imagePaths = (templates.find(t => t.id === templateId)?.criteriaConfig || [])
-              .map(criterion => criterion.imagePath)
-              .filter((path): path is string => Boolean(path));
+  const deleteTemplateById = async (templateId: string) => {
+    try {
+      const imagePaths = (templates.find(t => t.id === templateId)?.criteriaConfig || [])
+        .map(criterion => criterion.imagePath)
+        .filter((path): path is string => Boolean(path));
 
-            await deleteTemplate(templateId);
-            setTemplates(prev => prev.filter(t => t.id !== templateId));
-            await Promise.all(imagePaths.map(deleteTemplateImage));
-        } catch (error) {
-            console.error("Falha ao excluir modelo:", error);
-            alert((error as Error).message || "Falha ao excluir o modelo. Tente novamente.");
-        }
+      await deleteTemplate(templateId);
+      setTemplates(prev => prev.filter(t => t.id !== templateId));
+      await Promise.all(imagePaths.map(deleteTemplateImage));
+    } catch (error) {
+      console.error("Falha ao excluir modelo:", error);
+      alert((error as Error).message || "Falha ao excluir o modelo. Tente novamente.");
     }
+  };
+
+  const handleDelete = (template: EvaluationTemplate) => {
+    setConfirmRequest({
+      title: 'Excluir modelo',
+      message: `Tem certeza que deseja excluir o modelo "${template.name}"? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      variant: 'danger',
+      action: () => deleteTemplateById(template.id),
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -456,24 +625,32 @@ const TemplateManager: React.FC = () => {
     }
   };
 
-  const importExampleTemplates = async () => {
-    if (window.confirm('Deseja importar os modelos de exemplo? Isso criará novos modelos de formulário prontos para uso.')) {
-      setIsSaving(true);
-      try {
-        const importedTemplates: EvaluationTemplate[] = [];
-        for (const template of exampleTemplates) {
-          const saved = await saveTemplate(template);
-          importedTemplates.push(saved);
-        }
-        setTemplates(prev => [...prev, ...importedTemplates]);
-        alert(`${importedTemplates.length} modelos de exemplo foram importados com sucesso!`);
-      } catch (error) {
-        console.error("Falha ao importar modelos:", error);
-        alert("Falha ao importar os modelos de exemplo. Tente novamente.");
-      } finally {
-        setIsSaving(false);
+  const runExampleImport = async () => {
+    setIsSaving(true);
+    try {
+      const importedTemplates: EvaluationTemplate[] = [];
+      for (const template of exampleTemplates) {
+        const saved = await saveTemplate(template);
+        importedTemplates.push(saved);
       }
+      setTemplates(prev => [...prev, ...importedTemplates]);
+      alert(`${importedTemplates.length} modelos de exemplo foram importados com sucesso!`);
+    } catch (error) {
+      console.error("Falha ao importar modelos:", error);
+      alert("Falha ao importar os modelos de exemplo. Tente novamente.");
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const importExampleTemplates = () => {
+    setConfirmRequest({
+      title: 'Importar modelos de exemplo',
+      message: 'Isso criará novos modelos de formulário prontos para uso.',
+      confirmLabel: 'Importar',
+      variant: 'primary',
+      action: runExampleImport,
+    });
   };
 
   // Funções para filiais
@@ -503,16 +680,24 @@ const TemplateManager: React.FC = () => {
     }
   };
 
-  const handleDeleteBranch = async (branch: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir a filial "${branch}"?`)) {
-      try {
-        await deleteBranch(branch);
-        setBranches(prev => prev.filter(b => b !== branch));
-      } catch (error) {
-        console.error('Erro ao excluir filial:', error);
-        alert('Erro ao excluir filial. Tente novamente.');
-      }
+  const deleteBranchByName = async (branch: string) => {
+    try {
+      await deleteBranch(branch);
+      setBranches(prev => prev.filter(b => b !== branch));
+    } catch (error) {
+      console.error('Erro ao excluir filial:', error);
+      alert('Erro ao excluir filial. Tente novamente.');
     }
+  };
+
+  const handleDeleteBranch = (branch: string) => {
+    setConfirmRequest({
+      title: 'Excluir filial',
+      message: `Tem certeza que deseja excluir a filial "${branch}"?`,
+      confirmLabel: 'Excluir',
+      variant: 'danger',
+      action: () => deleteBranchByName(branch),
+    });
   };
 
   // Funções para usuários
@@ -591,16 +776,24 @@ const TemplateManager: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.')) {
-      try {
-        await deleteUser(userId);
-        setUsers(prev => prev.filter(u => u.id !== userId));
-      } catch (error) {
-        console.error("Falha ao excluir usuário:", error);
-        alert((error as Error).message || "Falha ao excluir o usuário. Tente novamente.");
-      }
+  const deleteUserById = async (userId: string) => {
+    try {
+      await deleteUser(userId);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } catch (error) {
+      console.error("Falha ao excluir usuário:", error);
+      alert((error as Error).message || "Falha ao excluir o usuário. Tente novamente.");
     }
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setConfirmRequest({
+      title: 'Excluir usuário',
+      message: `Tem certeza que deseja excluir o usuário "${user.name}"? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      variant: 'danger',
+      action: () => deleteUserById(user.id),
+    });
   };
 
   const handleBranchToggle = (branch: string) => {
@@ -616,46 +809,57 @@ const TemplateManager: React.FC = () => {
   const userFormTitle = editingUserId ? 'Editando Usuário' : 'Criar Novo Usuário';
   const userSaveButtonText = editingUserId ? 'Salvar Alterações' : 'Salvar Novo Usuário';
 
-  const SubTabButton: React.FC<{ tabName: SubTab; label: string; icon: React.ReactNode }> = ({ tabName, label, icon }) => (
-    <button
-      onClick={() => setActiveSubTab(tabName)}
-      className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent whitespace-nowrap min-w-0 ${
-        activeSubTab === tabName
-          ? 'bg-brand-primary text-white'
-          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-      }`}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-    </button>
-  );
+  // Abre o editor de modelos já carregado com o formulário escolhido (usado pela aba Formulários)
+  const handleEditFromForms = (template: EvaluationTemplate) => {
+    setActiveSubTab('models');
+    handleEdit(template);
+  };
+
+  const simpleForms = templates.filter(t => !t.headerType && t.includeHeader === false);
+
+  const subTabs: Array<{ tab: SubTab; label: string; icon: IconName }> = [
+    { tab: 'models', label: 'Modelos', icon: 'clipboard-list' },
+    { tab: 'forms', label: 'Formulários', icon: 'file-text' },
+    { tab: 'branches', label: 'Filiais', icon: 'building' },
+    ...(canManageSystem ? [{ tab: 'users' as const, label: 'Usuários', icon: 'users' as const }] : []),
+  ];
 
   return (
     <div className="space-y-6">
       {/* Header com sub-abas */}
       <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
         <h2 className="text-2xl font-bold text-brand-dark flex items-center gap-2">
-          <Settings className="h-6 w-6 text-brand-primary" />
+          <Icon name="settings" className="h-6 w-6 text-brand-primary" />
           Gerenciar Sistema
         </h2>
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          <SubTabButton tabName="models" label="Modelos" icon={<FileText className="h-4 w-4" />} />
-          <SubTabButton tabName="forms" label="Formulários" icon={<FileText className="h-4 w-4" />} />
-          <SubTabButton tabName="branches" label="Filiais" icon={<Building className="h-4 w-4" />} />
-          {canManageSystem && (
-            <SubTabButton tabName="users" label="Usuários" icon={<Users className="h-4 w-4" />} />
-          )}
+        <div
+          role="tablist"
+          aria-label="Seções de gerenciamento"
+          className={`grid gap-1 rounded-brand bg-brand-gray p-1 lg:flex lg:w-auto ${
+            subTabs.length === 4 ? 'grid-cols-4' : 'grid-cols-3'
+          }`}
+        >
+          {subTabs.map(({ tab, label, icon }) => (
+            <SubTabButton
+              key={tab}
+              label={label}
+              icon={icon}
+              isActive={activeSubTab === tab}
+              onSelect={() => setActiveSubTab(tab)}
+            />
+          ))}
         </div>
       </div>
 
       {/* Conteúdo da aba Modelos */}
       {activeSubTab === 'models' && (
-        <div className="space-y-8">
-          <div ref={formRef} />
-          <Card>
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <div className="space-y-6 sm:space-y-8">
+          <div ref={formRef} className="scroll-mt-20" />
+          {/* overflow visível: o overflow-hidden padrão do Card quebraria a barra sticky de ações */}
+          <Card className="!overflow-visible">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6">
               <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2">
-                {editingTemplateId ? <Edit className="h-6 w-6 text-brand-primary" /> : <PlusCircle className="h-6 w-6 text-brand-primary" />}
+                {editingTemplateId ? <Icon name="pencil" className="h-6 w-6 text-brand-primary" /> : <Icon name="circle-plus" className="h-6 w-6 text-brand-primary" />}
                 {formTitle}
               </h2>
               
@@ -670,12 +874,12 @@ const TemplateManager: React.FC = () => {
 
               {/* Configurações do Template */}
               <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">Configurações do Formulário</h3>
+                <h3 className="text-lg font-semibold text-brand-dark mb-3">Configurações do Formulário</h3>
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Cabeçalho</p>
                     <div className="space-y-2">
-                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
                         headerType === undefined
                           ? 'border-brand-primary bg-brand-light'
                           : 'border-gray-200 hover:bg-gray-100'
@@ -685,16 +889,16 @@ const TemplateManager: React.FC = () => {
                           name="headerType"
                           checked={headerType === undefined}
                           onChange={() => setHeaderType(undefined)}
-                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
                         />
-                        <div className="ml-3">
+                        <div className="ml-3 min-w-0">
                           <span className="text-sm font-medium text-gray-700">Sem cabeçalho</span>
                           <span className="block text-xs text-gray-500">
                             Apenas os campos do formulário, sem dados de identificação. Ideal para pesquisas e formulários simples.
                           </span>
                         </div>
                       </label>
-                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
                         headerType === 'evaluation'
                           ? 'border-brand-primary bg-brand-light'
                           : 'border-gray-200 hover:bg-gray-100'
@@ -704,16 +908,16 @@ const TemplateManager: React.FC = () => {
                           name="headerType"
                           checked={headerType === 'evaluation'}
                           onChange={() => setHeaderType('evaluation')}
-                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
                         />
-                        <div className="ml-3">
+                        <div className="ml-3 min-w-0">
                           <span className="text-sm font-medium text-gray-700">Cabeçalho de Avaliação</span>
                           <span className="block text-xs text-gray-500">
                             Campos: Matrícula, Motorista, Setor, Turno, Filial, VT, Data e Média Geral.
                           </span>
                         </div>
                       </label>
-                      <label className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${
+                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
                         headerType === 'rh'
                           ? 'border-brand-primary bg-brand-light'
                           : 'border-gray-200 hover:bg-gray-100'
@@ -723,9 +927,9 @@ const TemplateManager: React.FC = () => {
                           name="headerType"
                           checked={headerType === 'rh'}
                           onChange={() => setHeaderType('rh')}
-                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent mt-0.5"
+                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
                         />
-                        <div className="ml-3">
+                        <div className="ml-3 min-w-0">
                           <span className="text-sm font-medium text-gray-700">Cabeçalho de RH</span>
                           <span className="block text-xs text-gray-500">
                             Campos: Nome do Colaborador, Função, Turno Principal, Equipe/Setor, Filial, Data e Média Geral.
@@ -735,26 +939,18 @@ const TemplateManager: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center">
-                    <input
-                      id="includeFinalConsiderations"
-                      type="checkbox"
-                      checked={includeFinalConsiderations}
-                      onChange={(e) => setIncludeFinalConsiderations(e.target.checked)}
-                      className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-                    />
-                    <label htmlFor="includeFinalConsiderations" className="ml-2 block text-sm text-gray-700">
-                      <span className="font-medium">Incluir campo de considerações finais</span>
-                      <span className="block text-xs text-gray-500">
-                        Campo para observações, pontos positivos e melhorias.
-                      </span>
-                    </label>
-                  </div>
+                  <Checkbox
+                    label="Incluir campo de considerações finais"
+                    name="includeFinalConsiderations"
+                    checked={includeFinalConsiderations}
+                    onChange={setIncludeFinalConsiderations}
+                    description="Campo para observações, pontos positivos e melhorias."
+                  />
                 </div>
               </div>
-              
+
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">Campos do Formulário</h3>
+                <h3 className="text-lg font-semibold text-brand-dark mb-3">Campos do Formulário</h3>
                 <p className="text-sm text-gray-600 mb-3">Configure os campos que aparecerão no formulário de avaliação</p>
                 <div className="space-y-4">
                   {criteriaConfig.map((criterion, index) => (
@@ -776,127 +972,60 @@ const TemplateManager: React.FC = () => {
                     />
                   ))}
                 </div>
-                <div className="flex gap-3 mt-4">
-                  <Button type="button" onClick={addCriterion} variant="secondary">
-                    <PlusCircle className="h-4 w-4 mr-2" />
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <Button type="button" onClick={addCriterion} variant="secondary" className="w-full sm:w-auto">
+                    <Icon name="circle-plus" className="h-4 w-4" />
                     Adicionar Campo
                   </Button>
-                  <Button 
-                    type="button" 
-                    onClick={importExampleTemplates} 
+                  <Button
+                    type="button"
+                    onClick={importExampleTemplates}
                     variant="secondary"
-                    className="!bg-blue-100 !text-blue-700 hover:!bg-blue-200"
+                    className="w-full sm:w-auto"
                     disabled={isSaving}
                   >
-                    <Download className="h-4 w-4 mr-2" />
+                    <Icon name="download" className="h-4 w-4" />
                     Importar Modelos de Exemplo
                   </Button>
                 </div>
               </div>
-              
-              <div className="flex justify-end gap-4">
-                {editingTemplateId && (
-                    <Button type="button" onClick={resetForm} variant="secondary">
-                        <XCircle className="h-5 w-5 mr-2" />
-                        Cancelar Edição
-                    </Button>
-                )}
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5 mr-2" />}
-                  {isSaving ? 'Salvando...' : saveButtonText}
-                </Button>
-              </div>
+
+              <FormActionBar
+                isEditing={editingTemplateId !== null}
+                isSaving={isSaving}
+                saveLabel={saveButtonText}
+                onCancel={resetForm}
+              />
             </form>
           </Card>
 
           <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
-                <FileText className="h-6 w-6 text-brand-primary" />
+            <div className={CARD_BODY_CLASSES}>
+              <h2 className={SECTION_TITLE_CLASSES}>
+                <Icon name="file-text" className="h-6 w-6 text-brand-primary" />
                 Modelos Existentes
               </h2>
               {isLoading ? (
-                 <div className="flex justify-center items-center h-24">
-                    <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
-                 </div>
+                <div className="flex justify-center items-center h-24">
+                  <Icon name="loader-2" className="h-8 w-8 animate-spin text-brand-primary" />
+                </div>
               ) : templates.length > 0 ? (
-                <ul className="space-y-3">
+                <ul className="space-y-4">
                   {templates.map(template => (
-                    <li key={template.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-                        <div className="flex-grow min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="font-semibold text-gray-800">{template.name}</p>
-                            {template.headerType ? (
-                              <>
-                                {template.headerType === 'evaluation' && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Avaliação
-                                  </span>
-                                )}
-                                {template.headerType === 'rh' && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                    RH
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                {template.includeHeader === false && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    Formulário
-                                  </span>
-                                )}
-                                {template.includeHeader === true && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Avaliação
-                                  </span>
-                                )}
-                              </>
-                            )}
-                            {template.headerType === undefined && template.includeHeader !== true && template.includeHeader !== false && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                Formulário
-                              </span>
-                            )}
+                    <li key={template.id} className={LIST_ITEM_CLASSES}>
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0 flex-grow">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words font-semibold text-brand-dark">{template.name}</p>
+                            <TemplateKindBadge template={template} />
                           </div>
-                          <div className="flex flex-wrap gap-1">
-                            {template.criteriaConfig ? (
-                              template.criteriaConfig.map((criterion, index) => (
-                                <span key={index} className="inline-flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border">
-                                  <span className="truncate max-w-[150px]" title={criterion.name}>
-                                    {criterion.name}
-                                  </span>
-                                  {criterion.required && (
-                                    <span className="text-red-500 font-bold">*</span>
-                                  )}
-                                </span>
-                              ))
-                            ) : (
-                              <div className="flex flex-wrap gap-1">
-                                {template.criteria.map((criterion, index) => (
-                                  <span key={index} className="inline-block text-xs bg-white px-2 py-1 rounded border truncate max-w-[150px]" title={criterion}>
-                                    {criterion}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <CriteriaChips template={template} />
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-                          <Button onClick={() => handleEdit(template)} variant="secondary" className="!py-1 !px-3 text-sm whitespace-nowrap">
-                              <Edit className="h-4 w-4 mr-1" />
-                              Editar
-                          </Button>
-                           <Button 
-                              onClick={() => handleDelete(template.id)} 
-                              variant="secondary" 
-                              className="!py-1 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200 whitespace-nowrap"
-                           >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              Excluir
-                          </Button>
-                        </div>
+                        <RowActions
+                          itemLabel={`modelo ${template.name}`}
+                          onEdit={() => handleEdit(template)}
+                          onDelete={() => handleDelete(template)}
+                        />
                       </div>
                     </li>
                   ))}
@@ -913,78 +1042,68 @@ const TemplateManager: React.FC = () => {
       {activeSubTab === 'branches' && (
         <div className="space-y-6">
           <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
-                <PlusCircle className="h-6 w-6 text-brand-primary" />
+            <div className={CARD_BODY_CLASSES}>
+              <h2 className={SECTION_TITLE_CLASSES}>
+                <Icon name="circle-plus" className="h-6 w-6 text-brand-primary" />
                 Adicionar Nova Filial
               </h2>
-              <div className="flex gap-3">
-                <div className="flex-grow">
-                  <Input
-                    label="Nome da Filial"
-                    value={newBranch}
-                    onChange={(e) => setNewBranch(e.target.value)}
-                    placeholder="Ex: Unidade Leste"
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddBranch()}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button onClick={handleAddBranch} disabled={!newBranch.trim()}>
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Adicionar
-                  </Button>
-                </div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                <Input
+                  label="Nome da Filial"
+                  value={newBranch}
+                  onChange={(e) => setNewBranch(e.target.value)}
+                  placeholder="Ex: Unidade Leste"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddBranch()}
+                  wrapperClassName="min-w-0 flex-1"
+                />
+                <Button onClick={handleAddBranch} disabled={!newBranch.trim()} className="w-full sm:w-auto">
+                  <Icon name="circle-plus" className="h-4 w-4" />
+                  Adicionar
+                </Button>
               </div>
             </div>
           </Card>
 
           <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
-                <Building className="h-6 w-6 text-brand-primary" />
+            <div className={CARD_BODY_CLASSES}>
+              <h2 className={SECTION_TITLE_CLASSES}>
+                <Icon name="building" className="h-6 w-6 text-brand-primary" />
                 Filiais Existentes
               </h2>
               {branches.length > 0 ? (
-                <ul className="space-y-3">
+                <ul className="space-y-4">
                   {branches.map(branch => (
-                    <li key={branch} className="p-4 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center">
-                      <div className="flex-grow">
-                        {editingBranch === branch ? (
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={editingBranchName}
-                              onChange={(e) => setEditingBranchName(e.target.value)}
-                              className="flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent sm:text-sm"
-                              onKeyPress={(e) => e.key === 'Enter' && handleSaveBranchEdit()}
-                            />
-                            <Button onClick={handleSaveBranchEdit} variant="secondary" className="!py-1 !px-3 text-sm">
-                              <Save className="h-4 w-4 mr-1" />
+                    <li key={branch} className={LIST_ITEM_CLASSES}>
+                      {editingBranch === branch ? (
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <input
+                            type="text"
+                            aria-label={`Novo nome da filial ${branch}`}
+                            value={editingBranchName}
+                            onChange={(e) => setEditingBranchName(e.target.value)}
+                            className={`${FIELD_CLASSES} min-w-0 sm:flex-1`}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveBranchEdit()}
+                            autoFocus
+                          />
+                          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-shrink-0">
+                            <Button onClick={handleSaveBranchEdit} variant="secondary" size="sm">
+                              <Icon name="device-floppy" className="h-4 w-4" />
                               Salvar
                             </Button>
-                            <Button onClick={() => setEditingBranch(null)} variant="secondary" className="!py-1 !px-3 text-sm">
-                              <XCircle className="h-4 w-4 mr-1" />
+                            <Button onClick={() => setEditingBranch(null)} variant="ghost" size="sm">
+                              <Icon name="x" className="h-4 w-4" />
                               Cancelar
                             </Button>
                           </div>
-                        ) : (
-                          <p className="font-semibold text-gray-800">{branch}</p>
-                        )}
-                      </div>
-                      {editingBranch !== branch && (
-                        <div className="flex items-center gap-2">
-                          <Button onClick={() => handleEditBranch(branch)} variant="secondary" className="!py-1 !px-3 text-sm">
-                            <Edit className="h-4 w-4 mr-1" />
-                            Editar
-                          </Button>
-                          <Button 
-                            onClick={() => handleDeleteBranch(branch)} 
-                            variant="secondary" 
-                            className="!py-1 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200"
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Excluir
-                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="min-w-0 break-words font-semibold text-brand-dark">{branch}</p>
+                          <RowActions
+                            itemLabel={`filial ${branch}`}
+                            onEdit={() => handleEditBranch(branch)}
+                            onDelete={() => handleDeleteBranch(branch)}
+                          />
                         </div>
                       )}
                     </li>
@@ -1001,58 +1120,62 @@ const TemplateManager: React.FC = () => {
       {/* Conteúdo da aba Usuários */}
       {activeSubTab === 'users' && canManageSystem && (
         <div className="space-y-6">
-          <div ref={formRef} />
-          <Card>
-            <form onSubmit={handleSubmitUser} className="p-6 space-y-6">
+          <div ref={formRef} className="scroll-mt-20" />
+          {/* overflow visível: o overflow-hidden padrão do Card quebraria a barra sticky de ações */}
+          <Card className="!overflow-visible">
+            <form onSubmit={handleSubmitUser} className="p-4 sm:p-6 space-y-6">
               <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2">
-                {editingUserId ? <Edit className="h-6 w-6 text-brand-primary" /> : <PlusCircle className="h-6 w-6 text-brand-primary" />}
+                {editingUserId ? <Icon name="pencil" className="h-6 w-6 text-brand-primary" /> : <Icon name="circle-plus" className="h-6 w-6 text-brand-primary" />}
                 {userFormTitle}
               </h2>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input 
-                    label="Nome Completo" 
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Nome Completo"
                     name="userName"
                     value={userName}
                     onChange={(e) => setUserName(e.target.value)}
                     placeholder="Ex: João Silva"
-                    required 
+                    autoComplete="off"
+                    required
                   />
-                  
-                  <Input 
-                    label="Email" 
+
+                  <Input
+                    label="Email"
                     name="userEmail"
                     type="email"
                     value={userEmail}
                     onChange={(e) => setUserEmail(e.target.value)}
                     placeholder="joao.silva@empresa.com"
-                    required 
+                    autoComplete="off"
+                    required
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input 
-                    label={editingUserId ? "Nova Senha (deixe vazio para manter)" : "Senha"} 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label={editingUserId ? "Nova Senha (deixe vazio para manter)" : "Senha"}
                     name="userPassword"
                     type="password"
                     value={userPassword}
                     onChange={(e) => setUserPassword(e.target.value)}
                     placeholder="Senha do usuário"
+                    autoComplete="new-password"
                     required={!editingUserId}
                   />
-                  
-                  <Input 
-                    label="Cargo" 
+
+                  <Input
+                    label="Cargo"
                     name="userPosition"
                     value={userPosition}
                     onChange={(e) => setUserPosition(e.target.value)}
                     placeholder="Ex: Supervisor"
-                    required 
+                    required
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Select
                     label="Nível de Acesso"
                     name="userRole"
@@ -1065,131 +1188,105 @@ const TemplateManager: React.FC = () => {
                   </Select>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <label
+                  htmlFor="userCanAccessMN10"
+                  className={`flex min-h-11 items-center gap-3 py-2 ${userRole === 'admin' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                >
                   <input
                     id="userCanAccessMN10"
                     type="checkbox"
                     checked={userRole === 'admin' ? true : userCanAccessMN10}
                     onChange={(e) => setUserCanAccessMN10(e.target.checked)}
                     disabled={userRole === 'admin'}
-                    className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                    className="h-5 w-5 flex-shrink-0 accent-brand-primary"
                   />
-                  <label htmlFor="userCanAccessMN10" className="text-sm text-gray-700">
+                  <span className="min-w-0 text-sm font-medium text-gray-700">
                     Acesso ao MN10 {userRole === 'admin' ? '(sempre habilitado para admin)' : ''}
-                  </label>
-                </div>
+                  </span>
+                </label>
               </div>
 
               {userRole === 'manager' && (
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Filiais de Acesso</h3>
+                  <h3 className="text-lg font-semibold text-brand-dark mb-3">Filiais de Acesso</h3>
                   <p className="text-sm text-gray-600 mb-3">Selecione as filiais que este gestor pode acessar</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {branches.map(branch => (
-                      <label key={branch} className="flex items-center gap-2 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={userBranches.includes(branch)}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {branches.map((branch, branchIndex) => {
+                      const isSelected = userBranches.includes(branch);
+                      return (
+                        <Checkbox
+                          key={branch}
+                          label={branch}
+                          name={`userBranch-${branchIndex}`}
+                          checked={isSelected}
                           onChange={() => handleBranchToggle(branch)}
-                          className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
+                          className={`px-3 border rounded-brand transition-colors ${
+                            isSelected ? 'border-brand-primary bg-brand-light' : 'border-gray-200 hover:bg-gray-50'
+                          }`}
                         />
-                        <span className="text-sm text-gray-700">{branch}</span>
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center gap-3">
-                <input
-                  id="userIsActive"
-                  type="checkbox"
-                  checked={userIsActive}
-                  onChange={(e) => setUserIsActive(e.target.checked)}
-                  className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-                />
-                <label htmlFor="userIsActive" className="text-sm text-gray-700">
-                  Usuário Ativo
-                </label>
-              </div>
-              
-              <div className="flex justify-end gap-4">
-                {editingUserId && (
-                  <Button type="button" onClick={resetUserForm} variant="secondary">
-                    <XCircle className="h-5 w-5 mr-2" />
-                    Cancelar Edição
-                  </Button>
-                )}
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5 mr-2" />}
-                  {isSaving ? 'Salvando...' : userSaveButtonText}
-                </Button>
-              </div>
+              <Checkbox
+                label="Usuário Ativo"
+                name="userIsActive"
+                checked={userIsActive}
+                onChange={setUserIsActive}
+              />
+
+              <FormActionBar
+                isEditing={editingUserId !== null}
+                isSaving={isSaving}
+                saveLabel={userSaveButtonText}
+                onCancel={resetUserForm}
+              />
             </form>
           </Card>
 
           <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
-                <Users className="h-6 w-6 text-brand-primary" />
+            <div className={CARD_BODY_CLASSES}>
+              <h2 className={SECTION_TITLE_CLASSES}>
+                <Icon name="users" className="h-6 w-6 text-brand-primary" />
                 Usuários do Sistema
               </h2>
               {isLoading ? (
                 <div className="flex justify-center items-center h-24">
-                  <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+                  <Icon name="loader-2" className="h-8 w-8 animate-spin text-brand-primary" />
                 </div>
               ) : users.length > 0 ? (
-                <ul className="space-y-3">
+                <ul className="space-y-4">
                   {users.map(user => (
-                    <li key={user.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-                        <div className="flex-grow min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold text-gray-800">{user.name}</p>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              user.role === 'admin' 
-                                ? 'bg-purple-100 text-purple-800' 
-                                : 'bg-blue-100 text-blue-800'
-                            }`}>
+                    <li key={user.id} className={LIST_ITEM_CLASSES}>
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0 flex-grow">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words font-semibold text-brand-dark">{user.name}</p>
+                            <Badge tone={user.role === 'admin' ? 'solid' : 'brand'}>
                               {user.role === 'admin' ? 'Administrador' : 'Gestor'}
-                            </span>
-                            {!user.isActive && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                Inativo
-                              </span>
-                            )}
-                            {(user.role === 'admin' || user.canAccessMN10) && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                MN10
-                              </span>
-                            )}
+                            </Badge>
+                            {!user.isActive && <Badge tone="red">Inativo</Badge>}
+                            {(user.role === 'admin' || user.canAccessMN10) && <Badge tone="amber">MN10</Badge>}
                           </div>
-                          <p className="text-sm text-gray-600">{user.email}</p>
-                          <p className="text-sm text-gray-600">{user.position}</p>
+                          <p className="break-all text-sm text-gray-600">{user.email}</p>
+                          <p className="break-words text-sm text-gray-600">{user.position}</p>
                           {user.role === 'manager' && user.branches.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
                               {user.branches.map(branch => (
-                                <span key={branch} className="inline-block text-xs bg-white px-2 py-1 rounded border">
+                                <span key={branch} className="inline-block max-w-full break-words text-xs bg-white px-2 py-1 rounded border">
                                   {branch}
                                 </span>
                               ))}
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-                          <Button onClick={() => handleEditUser(user)} variant="secondary" className="!py-1 !px-3 text-sm whitespace-nowrap">
-                            <Edit className="h-4 w-4 mr-1" />
-                            Editar
-                          </Button>
-                          <Button 
-                            onClick={() => handleDeleteUser(user.id)} 
-                            variant="secondary" 
-                            className="!py-1 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200 whitespace-nowrap"
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Excluir
-                          </Button>
-                        </div>
+                        <RowActions
+                          itemLabel={`usuário ${user.name}`}
+                          onEdit={() => handleEditUser(user)}
+                          onDelete={() => handleDeleteUser(user)}
+                        />
                       </div>
                     </li>
                   ))}
@@ -1206,9 +1303,9 @@ const TemplateManager: React.FC = () => {
       {activeSubTab === 'forms' && (
         <div className="space-y-6">
           <Card>
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-brand-dark flex items-center gap-2 mb-4">
-                <FileText className="h-6 w-6 text-brand-primary" />
+            <div className={CARD_BODY_CLASSES}>
+              <h2 className={SECTION_TITLE_CLASSES}>
+                <Icon name="file-text" className="h-6 w-6 text-brand-primary" />
                 Formulários Simples
               </h2>
               <p className="text-gray-600 mb-4">
@@ -1216,79 +1313,38 @@ const TemplateManager: React.FC = () => {
               </p>
               {isLoading ? (
                 <div className="flex justify-center items-center h-24">
-                  <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+                  <Icon name="loader-2" className="h-8 w-8 animate-spin text-brand-primary" />
                 </div>
-              ) : templates.filter(t => !t.headerType && t.includeHeader === false).length > 0 ? (
-                <ul className="space-y-3">
-                  {templates.filter(t => !t.headerType && t.includeHeader === false).map(template => (
-                    <li key={template.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-                        <div className="flex-grow min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="font-semibold text-gray-800">{template.name}</p>
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              Formulário
-                            </span>
+              ) : simpleForms.length > 0 ? (
+                <ul className="space-y-4">
+                  {simpleForms.map(template => (
+                    <li key={template.id} className={LIST_ITEM_CLASSES}>
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0 flex-grow">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words font-semibold text-brand-dark">{template.name}</p>
+                            <Badge tone="neutral">Formulário</Badge>
                           </div>
-                          <div className="flex flex-wrap gap-1">
-                            {template.criteriaConfig ? (
-                              template.criteriaConfig.map((criterion, index) => (
-                                <span key={index} className="inline-flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border">
-                                  <span className="truncate max-w-[150px]" title={criterion.name}>
-                                    {criterion.name}
-                                  </span>
-                                  {criterion.required && (
-                                    <span className="text-red-500 font-bold">*</span>
-                                  )}
-                                  <span className="text-gray-400 uppercase text-xs">
-                                    {criterion.type === 'rating' ? 'AVAL' :
-                                     criterion.type === 'rating-5' ? 'AVAL 1-5' :
-                                     criterion.type === 'text' ? 'TEXTO' :
-                                     criterion.type === 'number' ? 'NÚMERO' :
-                                     criterion.type === 'radio' ? 'OPÇÃO' :
-                                     criterion.type === 'date' ? 'DATA' :
-                                     criterion.type === 'checkbox' ? 'CHECK' : ''}
-                                  </span>
-                                </span>
-                              ))
-                            ) : (
-                              <div className="flex flex-wrap gap-1">
-                                {template.criteria.map((criterion, index) => (
-                                  <span key={index} className="inline-block text-xs bg-white px-2 py-1 rounded border truncate max-w-[150px]" title={criterion}>
-                                    {criterion}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <CriteriaChips template={template} showType />
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-                          <Button onClick={() => handleEdit(template)} variant="secondary" className="!py-1 !px-3 text-sm whitespace-nowrap">
-                            <Edit className="h-4 w-4 mr-1" />
-                            Editar
-                          </Button>
-                          <Button 
-                            onClick={() => handleDelete(template.id)} 
-                            variant="secondary" 
-                            className="!py-1 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200 whitespace-nowrap"
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Excluir
-                          </Button>
-                        </div>
+                        <RowActions
+                          itemLabel={`formulário ${template.name}`}
+                          onEdit={() => handleEditFromForms(template)}
+                          onDelete={() => handleDelete(template)}
+                        />
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
                 <div className="text-center py-8">
-                  <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <Icon name="file-text" className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 mb-4">Nenhum formulário simples foi criado ainda.</p>
-                  <p className="text-sm text-gray-400 mb-4">
-                    Para criar um formulário simples, vá em "Modelos" e desmarque a opção "Incluir cabeçalho de avaliação".
+                  <p className="text-sm text-gray-500 mb-4">
+                    Para criar um formulário simples, vá em "Modelos" e, em "Tipo de Cabeçalho", escolha "Sem cabeçalho".
                   </p>
-                  <Button onClick={() => setActiveSubTab('models')} variant="secondary">
-                    <PlusCircle className="h-4 w-4 mr-2" />
+                  <Button onClick={() => setActiveSubTab('models')} variant="secondary" className="w-full sm:w-auto">
+                    <Icon name="circle-plus" className="h-4 w-4" />
                     Criar Formulário
                   </Button>
                 </div>
@@ -1297,6 +1353,17 @@ const TemplateManager: React.FC = () => {
           </Card>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmRequest !== null}
+        title={confirmRequest?.title ?? ''}
+        message={confirmRequest?.message}
+        confirmLabel={confirmRequest?.confirmLabel}
+        variant={confirmRequest?.variant}
+        isLoading={isConfirming}
+        onConfirm={runConfirmedAction}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 };

@@ -1,22 +1,22 @@
-
-import React from 'react';
+import React, { useId } from 'react';
+import { FIELD_CLASSES, LABEL_CLASSES } from './fieldStyles';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
+  // Classes do contêiner (label + campo); `className` vai para o <input>
+  wrapperClassName?: string;
 }
 
-const Input: React.FC<InputProps> = ({ label, name, ...props }) => {
+const Input: React.FC<InputProps> = ({ label, name, id, className = '', wrapperClassName = '', ...props }) => {
+  const generatedId = useId();
+  const inputId = id ?? name ?? generatedId;
+
   return (
-    <div>
-      <label htmlFor={name} className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+    <div className={wrapperClassName}>
+      <label htmlFor={inputId} className={LABEL_CLASSES}>
         {label}
       </label>
-      <input
-        id={name}
-        name={name}
-        className="block w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand-accent focus:border-brand-accent text-xs sm:text-sm"
-        {...props}
-      />
+      <input id={inputId} name={name} className={`${FIELD_CLASSES} ${className}`} {...props} />
     </div>
   );
 };

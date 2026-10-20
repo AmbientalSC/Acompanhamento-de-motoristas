@@ -1,9 +1,11 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, GripVertical, ImagePlus, PlusCircle, Trash2 } from 'lucide-react';
+import Icon from '../ui/Icon';
+import type { IconName } from '../ui/iconNames';
 import type { EvaluationCriterion, FieldType } from '../../types';
 import { TEMPLATE_IMAGE_ACCEPTED_TYPES, TEMPLATE_IMAGE_MAX_SIZE_MB } from '../../services/templateImageService';
 import { supportsAnswerKey } from '../../utils/gradingUtils';
 import Button from '../ui/Button';
+import Checkbox from '../ui/Checkbox';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
 
@@ -25,6 +27,33 @@ export interface CriterionEditorProps {
 }
 
 const hasOptions = (type: FieldType | undefined): boolean => type === 'radio' || type === 'number';
+
+interface ActionIconButtonProps {
+  icon: IconName;
+  label: string;
+  tone?: 'neutral' | 'danger';
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+// Botão só de ícone: alvo de 44px no celular, aria-label + title para leitores de tela e dica ao segurar.
+const ACTION_TONES: Record<NonNullable<ActionIconButtonProps['tone']>, string> = {
+  neutral: 'bg-brand-gray text-brand-primary hover:bg-brand-light',
+  danger: 'bg-red-100 text-red-700 hover:bg-red-200',
+};
+
+const ActionIconButton: React.FC<ActionIconButtonProps> = ({ icon, label, tone = 'neutral', disabled, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    aria-label={label}
+    title={label}
+    className={`inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-brand transition-colors sm:h-9 sm:w-9 ${ACTION_TONES[tone]} focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary disabled:cursor-not-allowed disabled:opacity-40`}
+  >
+    <Icon name={icon} className="h-5 w-5" />
+  </button>
+);
 
 const CriterionEditor: React.FC<CriterionEditorProps> = ({
   criterion,
@@ -55,225 +84,222 @@ const CriterionEditor: React.FC<CriterionEditorProps> = ({
   };
 
   return (
-    <div className="p-4 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
-      <div className="flex items-start gap-3 mb-4">
-        <div className="flex items-center justify-center w-8 h-8 text-gray-400 mt-1">
-          <GripVertical className="h-5 w-5" />
+    <div className="p-4 rounded-md border border-gray-200 bg-white">
+      {/* Cabeçalho: posição do campo + ações (mover / remover) */}
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <h4 className="min-w-0 text-sm font-semibold text-brand-dark">
+          Campo {index + 1} <span className="font-normal text-gray-500">de {total}</span>
+        </h4>
+        <div className="flex flex-shrink-0 items-center gap-1">
+          <ActionIconButton
+            icon="chevron-up"
+            label="Mover campo para cima"
+            onClick={() => onMoveUp(index)}
+            disabled={index === 0}
+          />
+          <ActionIconButton
+            icon="chevron-down"
+            label="Mover campo para baixo"
+            onClick={() => onMoveDown(index)}
+            disabled={index === total - 1}
+          />
+          <span className="ml-1 border-l border-gray-200 pl-2">
+            <ActionIconButton
+              icon="trash"
+              label="Remover campo"
+              tone="danger"
+              onClick={() => onRemove(index)}
+              disabled={total <= 1}
+            />
+          </span>
         </div>
-        <div className="flex-grow space-y-4">
-          {/* Nome do Campo */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Nome do Campo"
-              value={criterion.name}
-              onChange={(e) => onChange(index, 'name', e.target.value)}
-              placeholder="Ex: Estado do veículo"
-              required
-            />
-            <Select
-              label="Tipo do Campo"
-              value={type}
-              onChange={(e) => onChange(index, 'type', e.target.value as FieldType)}
-              required
-            >
-              <option value="rating">Avaliação (1-10)</option>
-              <option value="rating-5">Avaliação (1-5)</option>
-              <option value="text">Texto</option>
-              <option value="number">Número</option>
-              <option value="radio">Múltipla Escolha</option>
-              <option value="date">Data</option>
-              <option value="checkbox">Checkbox</option>
-            </Select>
-          </div>
+      </div>
 
-          {/* Configurações específicas por tipo */}
-          {(type === 'text' || type === 'date' || type === 'number') && (
-            <Input
-              label="Placeholder"
-              value={criterion.placeholder || ''}
-              onChange={(e) => onChange(index, 'placeholder', e.target.value)}
-              placeholder="Texto de exemplo para o usuário"
-            />
-          )}
+      <div className="space-y-4">
+        {/* Nome e tipo do campo */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input
+            label="Nome do Campo"
+            value={criterion.name}
+            onChange={(e) => onChange(index, 'name', e.target.value)}
+            placeholder="Ex: Estado do veículo"
+            required
+          />
+          <Select
+            label="Tipo do Campo"
+            value={type}
+            onChange={(e) => onChange(index, 'type', e.target.value as FieldType)}
+            required
+          >
+            <option value="rating">Avaliação (1-10)</option>
+            <option value="rating-5">Avaliação (1-5)</option>
+            <option value="text">Texto</option>
+            <option value="number">Número</option>
+            <option value="radio">Múltipla Escolha</option>
+            <option value="date">Data</option>
+            <option value="checkbox">Checkbox</option>
+          </Select>
+        </div>
 
-          {hasOptions(type) && (
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-1">
-                {isNumber ? 'Opções da lista suspensa (legenda)' : 'Opções de Múltipla Escolha'}
-              </h4>
-              {isNumber && (
-                <p className="text-xs text-gray-500 mb-2">
-                  Aparecem ao clicar na imagem. O motorista digita o número correspondente à resposta.
-                </p>
-              )}
-              <div className="space-y-2">
-                {(criterion.options || [{ label: '', value: '' }]).map((option, optionIndex) => (
-                  <div key={optionIndex} className="flex gap-2">
-                    <Input
-                      label={`Opção ${optionIndex + 1} - Texto`}
-                      value={option.label}
-                      onChange={(e) => onOptionChange(index, optionIndex, 'label', e.target.value)}
-                      placeholder={isNumber ? 'Ex: Freio de serviço' : 'Ex: Excelente'}
-                      className="flex-1"
-                    />
-                    <Input
-                      label={isNumber ? `Opção ${optionIndex + 1} - Número` : `Opção ${optionIndex + 1} - Valor`}
-                      value={option.value}
-                      onChange={(e) => onOptionChange(index, optionIndex, 'value', e.target.value)}
-                      placeholder={isNumber ? 'Ex: 1' : 'Ex: excelente'}
-                      inputMode={isNumber ? 'decimal' : undefined}
-                      className="flex-1"
-                    />
-                    <div className="flex items-end">
-                      <Button
-                        type="button"
-                        onClick={() => onOptionRemove(index, optionIndex)}
-                        variant="secondary"
-                        className="!py-2 !px-3 !bg-red-100 !text-red-700 hover:!bg-red-200"
-                        disabled={(criterion.options?.length || 0) <= 1}
-                        aria-label="Remover opção"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  onClick={() => onOptionAdd(index)}
-                  variant="secondary"
-                  className="!py-1 !px-3 text-sm"
-                >
-                  <PlusCircle className="h-4 w-4 mr-1" />
-                  Adicionar Opção
-                </Button>
-              </div>
-            </div>
-          )}
+        {/* Configurações específicas por tipo */}
+        {(type === 'text' || type === 'date' || type === 'number') && (
+          <Input
+            label="Placeholder"
+            value={criterion.placeholder || ''}
+            onChange={(e) => onChange(index, 'placeholder', e.target.value)}
+            placeholder="Texto de exemplo para o usuário"
+          />
+        )}
 
-          {/* Imagem da pergunta */}
+        {hasOptions(type) && (
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-1">Imagem da pergunta (opcional)</h4>
-            <p className="text-xs text-gray-500 mb-2">
-              Exibida acima do campo. JPG, PNG ou WebP, até {TEMPLATE_IMAGE_MAX_SIZE_MB} MB.
-            </p>
-            {imagePreview && (
-              <img
-                src={imagePreview}
-                alt={`Imagem da pergunta ${criterion.name || index + 1}`}
-                className="max-h-40 mb-2 rounded-md border border-gray-200 object-contain bg-white"
-              />
+            <h4 className="text-sm font-medium text-gray-700 mb-1">
+              {isNumber ? 'Opções da lista suspensa (legenda)' : 'Opções de Múltipla Escolha'}
+            </h4>
+            {isNumber && (
+              <p className="text-xs text-gray-500 mb-2">
+                Aparecem em "Ver opções" e junto da imagem ampliada. O motorista digita o número correspondente à resposta.
+              </p>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md cursor-pointer text-brand-primary bg-blue-100 hover:bg-blue-200 focus-within:ring-2 focus-within:ring-brand-accent">
-                <ImagePlus className="h-4 w-4 mr-1" />
-                {imagePreview ? 'Trocar imagem' : 'Escolher imagem'}
-                <input
-                  type="file"
-                  accept={TEMPLATE_IMAGE_ACCEPTED_TYPES.join(',')}
-                  onChange={handleImageChange}
-                  className="sr-only"
-                />
-              </label>
-              {imagePreview && (
-                <Button
-                  type="button"
-                  onClick={() => onImageRemove(index)}
-                  variant="secondary"
-                  className="!py-1.5 !px-3 text-sm !bg-red-100 !text-red-700 hover:!bg-red-200"
+            <div className="space-y-3 sm:space-y-2">
+              {(criterion.options || [{ label: '', value: '' }]).map((option, optionIndex) => (
+                <div
+                  key={optionIndex}
+                  className="grid grid-cols-1 gap-3 rounded-brand border border-gray-200 bg-brand-gray p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0"
                 >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Remover imagem
-                </Button>
-              )}
-              {pendingImagePreview && (
-                <span className="text-xs text-gray-500">A imagem será enviada ao salvar o modelo.</span>
-              )}
+                  <Input
+                    label={`Opção ${optionIndex + 1} - Texto`}
+                    value={option.label}
+                    onChange={(e) => onOptionChange(index, optionIndex, 'label', e.target.value)}
+                    placeholder={isNumber ? 'Ex: Freio de serviço' : 'Ex: Excelente'}
+                    wrapperClassName="min-w-0"
+                  />
+                  <Input
+                    label={isNumber ? `Opção ${optionIndex + 1} - Número` : `Opção ${optionIndex + 1} - Valor`}
+                    value={option.value}
+                    onChange={(e) => onOptionChange(index, optionIndex, 'value', e.target.value)}
+                    placeholder={isNumber ? 'Ex: 1' : 'Ex: excelente'}
+                    inputMode={isNumber ? 'decimal' : undefined}
+                    wrapperClassName="min-w-0"
+                  />
+                  <Button
+                    onClick={() => onOptionRemove(index, optionIndex)}
+                    variant="danger"
+                    size="sm"
+                    className="w-full sm:h-11 sm:w-11 sm:px-0"
+                    disabled={(criterion.options?.length || 0) <= 1}
+                    aria-label={`Remover opção ${optionIndex + 1}`}
+                    title="Remover opção"
+                  >
+                    <Icon name="trash" className="h-4 w-4" />
+                    <span className="sm:hidden">Remover opção</span>
+                  </Button>
+                </div>
+              ))}
+              <Button
+                onClick={() => onOptionAdd(index)}
+                variant="secondary"
+                size="sm"
+                className="w-full sm:w-auto"
+              >
+                <Icon name="circle-plus" className="h-4 w-4" />
+                Adicionar opção
+              </Button>
             </div>
           </div>
+        )}
 
-          {/* Gabarito */}
-          {supportsAnswerKey(type) && (
-            <div>
-              {type === 'radio' ? (
-                <Select
-                  label="Resposta correta (gabarito, opcional)"
-                  value={criterion.correctAnswer || ''}
-                  onChange={(e) => onChange(index, 'correctAnswer', e.target.value)}
-                >
-                  <option value="">Sem gabarito</option>
-                  {radioOptionsWithValue.map((option, optionIndex) => (
-                    <option key={`${option.value}-${optionIndex}`} value={option.value}>
-                      {option.label || option.value}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
+        {/* Imagem da pergunta */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-1">Imagem da pergunta (opcional)</h4>
+          <p className="text-xs text-gray-500 mb-2">
+            Exibida acima do campo. JPG, PNG ou WebP, até {TEMPLATE_IMAGE_MAX_SIZE_MB} MB.
+          </p>
+          {imagePreview && (
+            <img
+              src={imagePreview}
+              alt={`Imagem da pergunta ${criterion.name || index + 1}`}
+              className="mb-3 h-auto max-h-48 w-full rounded-brand border border-gray-200 bg-white object-contain sm:max-h-40 sm:w-auto sm:max-w-full"
+            />
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <label className="inline-flex min-h-11 w-full cursor-pointer select-none items-center justify-center gap-2 rounded-brand bg-brand-light px-3 py-1.5 text-sm font-semibold text-brand-primary transition-colors hover:bg-[#D9E3F5] focus-within:ring-2 focus-within:ring-brand-primary focus-within:ring-offset-2 sm:w-auto">
+              <Icon name="photo-plus" className="h-4 w-4" />
+              {imagePreview ? 'Trocar imagem' : 'Escolher imagem'}
+              <input
+                type="file"
+                accept={TEMPLATE_IMAGE_ACCEPTED_TYPES.join(',')}
+                onChange={handleImageChange}
+                className="sr-only"
+              />
+            </label>
+            {imagePreview && (
+              <Button
+                onClick={() => onImageRemove(index)}
+                variant="danger"
+                size="sm"
+                className="w-full sm:w-auto"
+              >
+                <Icon name="trash" className="h-4 w-4" />
+                Remover imagem
+              </Button>
+            )}
+          </div>
+          {pendingImagePreview && (
+            <p className="mt-2 text-xs text-gray-500">A imagem será enviada ao salvar o modelo.</p>
+          )}
+        </div>
+
+        {/* Gabarito */}
+        {supportsAnswerKey(type) && (
+          <div>
+            {type === 'radio' ? (
+              <Select
+                label="Resposta correta (gabarito, opcional)"
+                value={criterion.correctAnswer || ''}
+                onChange={(e) => onChange(index, 'correctAnswer', e.target.value)}
+              >
+                <option value="">Sem gabarito</option>
+                {radioOptionsWithValue.map((option, optionIndex) => (
+                  <option key={`${option.value}-${optionIndex}`} value={option.value}>
+                    {option.label || option.value}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <>
                 <Input
                   label="Resposta correta (gabarito, opcional)"
                   type={isNumber ? 'number' : 'text'}
                   step={isNumber ? 'any' : undefined}
+                  inputMode={isNumber ? 'decimal' : undefined}
                   value={criterion.correctAnswer || ''}
                   onChange={(e) => onChange(index, 'correctAnswer', e.target.value)}
-                  placeholder={isNumber ? 'Ex: 3' : 'Ex: resposta esperada (sem diferenciar maiúsculas/acentos)'}
+                  placeholder={isNumber ? 'Ex: 3' : 'Ex: resposta esperada'}
                 />
-              )}
-            </div>
-          )}
-
-          {/* Descrição/Ajuda */}
-          <Input
-            label="Descrição (opcional)"
-            value={criterion.description || ''}
-            onChange={(e) => onChange(index, 'description', e.target.value)}
-            placeholder="Texto de ajuda para orientar o avaliador"
-          />
-
-          {/* Campo obrigatório */}
-          <div className="flex items-center">
-            <input
-              id={`required-${index}`}
-              type="checkbox"
-              checked={criterion.required}
-              onChange={(e) => onChange(index, 'required', e.target.checked)}
-              className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-            />
-            <label htmlFor={`required-${index}`} className="ml-2 block text-sm text-gray-700">
-              Campo obrigatório
-            </label>
+                {!isNumber && (
+                  <p className="mt-1 text-xs text-gray-500">Não diferencia maiúsculas, minúsculas nem acentos.</p>
+                )}
+              </>
+            )}
           </div>
-        </div>
+        )}
 
-        {/* Botões de ação */}
-        <div className="flex flex-col items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onMoveUp(index)}
-            disabled={index === 0}
-            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Mover para cima"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMoveDown(index)}
-            disabled={index === total - 1}
-            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Mover para baixo"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(index)}
-            className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Remover campo"
-            disabled={total <= 1}
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
+        {/* Descrição/Ajuda */}
+        <Input
+          label="Descrição (opcional)"
+          value={criterion.description || ''}
+          onChange={(e) => onChange(index, 'description', e.target.value)}
+          placeholder="Texto de ajuda para orientar o avaliador"
+        />
+
+        {/* Campo obrigatório */}
+        <Checkbox
+          label="Campo obrigatório"
+          name={`required-${index}`}
+          checked={criterion.required}
+          onChange={(checked) => onChange(index, 'required', checked)}
+        />
       </div>
     </div>
   );

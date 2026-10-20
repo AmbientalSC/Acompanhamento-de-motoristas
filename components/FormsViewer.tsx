@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, AlertTriangle, FileText, Calendar, User, Building, Search, Trash2, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import Icon from './ui/Icon';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
 import GradingDetails from './GradingDetails';
 import Select from './ui/Select';
 import Input from './ui/Input';
+import Button from './ui/Button';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 const formatDate = (dateString: string) => {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
@@ -19,23 +21,27 @@ const FormsViewer: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   // Função para buscar o nome real do campo - compatível com dados antigos (IDs) e novos (nomes)
   const getFieldName = (fieldKey: string, templateId?: string): string => {
     if (!templateId) return fieldKey;
-    
+
     const template = templates.find(t => t.id === templateId);
     if (!template || !template.criteriaConfig) return fieldKey;
-    
+
     // Se o fieldKey já é um nome de campo (dados novos), retorna ele mesmo
     const fieldByName = template.criteriaConfig.find(c => c.name === fieldKey);
     if (fieldByName) return fieldKey;
-    
+
     // Se é um ID de campo (dados antigos), busca pelo ID e retorna o nome
     const fieldById = template.criteriaConfig.find(c => c.id === fieldKey);
     return fieldById ? fieldById.name : fieldKey;
@@ -44,20 +50,28 @@ const FormsViewer: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const [evaluationsData, templatesData] = await Promise.all([
-        getEvaluations(),
-        getTemplates()
-      ]);
-      setEvaluations(evaluationsData);
-      setTemplates(templatesData);
-      setIsLoading(false);
+      setLoadError(false);
+      try {
+        const [evaluationsData, templatesData] = await Promise.all([
+          getEvaluations(),
+          getTemplates()
+        ]);
+        setEvaluations(evaluationsData);
+        setTemplates(templatesData);
+      } catch (error) {
+        console.error('Erro ao carregar formulários:', error);
+        setLoadError(true);
+      } finally {
+        setIsLoading(false);
+      }
     };
     fetchData();
-  }, []);
+  }, [reloadKey]);
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirm) return;
-    
+
+    setIsDeleting(true);
     try {
       await deleteEvaluation(deleteConfirm.id);
       // Atualizar a lista local removendo o item
@@ -66,6 +80,8 @@ const FormsViewer: React.FC = () => {
     } catch (error) {
       console.error('Erro ao excluir formulário:', error);
       alert('Erro ao excluir formulário. Tente novamente.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -81,12 +97,18 @@ const FormsViewer: React.FC = () => {
     });
   };
 
-  const handleCancelDelete = () => {
+  const handleCancelDelete = useCallback(() => {
     setDeleteConfirm(null);
-  };
+  }, []);
 
   const handleDeleteClick = (evaluationId: string, templateName: string) => {
     setDeleteConfirm({ id: evaluationId, name: templateName });
+  };
+
+  const clearFilters = () => {
+    setSelectedTemplate('');
+    setSelectedBranch('');
+    setSearchTerm('');
   };
 
   // Filtrar apenas formulários (sem cabeçalho de avaliação)
@@ -96,11 +118,11 @@ const FormsViewer: React.FC = () => {
       // 1. averageScore é undefined, null, ou 0
       // 2. OU se o nome do motorista contém "Formulário" (indicando que foi preenchido sem cabeçalho)
       // 3. OU se não tem motorista preenchido
-      const isForm = e.averageScore === undefined || 
-                     e.averageScore === null || 
+      const isForm = e.averageScore === undefined ||
+                     e.averageScore === null ||
                      e.averageScore === 0 ||
                      (e.motorista && e.motorista.includes('Formulário')) ||
-                     !e.motorista || 
+                     !e.motorista ||
                      e.motorista.trim() === '';
       return isForm;
     });
@@ -123,31 +145,51 @@ const FormsViewer: React.FC = () => {
     return formSubmissions.filter(form => {
       const matchesTemplate = !selectedTemplate || form.templateName === selectedTemplate;
       const matchesBranch = !selectedBranch || form.filial === selectedBranch;
-      const matchesSearch = !searchTerm || 
+      const matchesSearch = !searchTerm ||
         form.templateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         form.motorista?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         form.filial?.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       return matchesTemplate && matchesBranch && matchesSearch;
     });
   }, [formSubmissions, selectedTemplate, selectedBranch, searchTerm]);
 
+  // Filtros de seleção ativos (a busca fica sempre visível, então não entra na contagem do bloco colapsável)
+  const activeSelectFilters = (selectedTemplate ? 1 : 0) + (selectedBranch ? 1 : 0);
+  const hasActiveFilters = activeSelectFilters > 0 || searchTerm !== '';
+
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-12 w-12 animate-spin text-brand-primary" />
-        <p className="ml-4 text-lg text-gray-600">Carregando formulários...</p>
+      <div role="status" className="flex h-64 items-center justify-center gap-3 sm:gap-4">
+        <Icon name="loader-2" className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-brand-primary" />
+        <p className="text-base sm:text-lg text-gray-600">Carregando formulários...</p>
       </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <div role="alert" className="p-6 sm:p-8 flex flex-col items-center justify-center text-center">
+          <Icon name="alert-triangle" className="h-12 w-12 sm:h-16 sm:w-16 text-red-500 mb-4" />
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Não foi possível carregar os formulários</h3>
+          <p className="text-gray-600 mt-2">Verifique a conexão e tente novamente.</p>
+          <Button onClick={() => setReloadKey(key => key + 1)} className="mt-4">
+            <Icon name="refresh" className="h-4 w-4" />
+            Tentar novamente
+          </Button>
+        </div>
+      </Card>
     );
   }
 
   if (formSubmissions.length === 0) {
     return (
       <Card>
-        <div className="p-8 flex flex-col items-center justify-center text-center">
-          <AlertTriangle className="h-16 w-16 text-yellow-400 mb-4" />
-          <h3 className="text-xl font-semibold text-gray-700">Nenhum Formulário Encontrado</h3>
-          <p className="text-gray-500 mt-2">
+        <div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center">
+          <Icon name="alert-triangle" className="h-12 w-12 sm:h-16 sm:w-16 text-yellow-400 mb-4" />
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Nenhum Formulário Encontrado</h3>
+          <p className="text-gray-600 mt-2">
             Ainda não há formulários preenchidos. Formulários são criados sem cabeçalho de avaliação.
           </p>
         </div>
@@ -156,122 +198,142 @@ const FormsViewer: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Filtros */}
       <Card>
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-brand-dark mb-4">Formulários Preenchidos</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Select
-              label="Filtrar por Modelo"
-              value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
-            >
-              <option value="">Todos os modelos</option>
-              {formTemplates.map(template => (
-                <option key={template} value={template}>{template}</option>
-              ))}
-            </Select>
-
-            <Select
-              label="Filtrar por Filial"
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-            >
-              <option value="">Todas as filiais</option>
-              {formBranches.map(branch => (
-                <option key={branch} value={branch}>{branch}</option>
-              ))}
-            </Select>
-
+        <div className="p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-bold text-brand-dark mb-4">Formulários Preenchidos</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
             <Input
               label="Buscar"
+              type="search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por modelo, pessoa ou filial..."
-              className="!mt-0"
+              placeholder="Modelo, pessoa ou filial"
             />
+
+            {/* Celular: modelo e filial ficam num bloco colapsável; a partir de md entram na mesma grade */}
+            <Button
+              variant="secondary"
+              className="md:hidden w-full"
+              onClick={() => setShowFilters(prev => !prev)}
+              aria-expanded={showFilters}
+              aria-controls="forms-viewer-filters"
+            >
+              <Icon name="filter" className="h-4 w-4" />
+              Filtros{activeSelectFilters > 0 ? ` (${activeSelectFilters})` : ''}
+              <Icon name="chevron-down" className={`h-4 w-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+            </Button>
+
+            <div
+              id="forms-viewer-filters"
+              className={`${showFilters ? 'grid' : 'hidden'} grid-cols-1 gap-3 md:contents`}
+            >
+              <Select
+                label="Filtrar por Modelo"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+              >
+                <option value="">Todos os modelos</option>
+                {formTemplates.map(template => (
+                  <option key={template} value={template}>{template}</option>
+                ))}
+              </Select>
+
+              <Select
+                label="Filtrar por Filial"
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+              >
+                <option value="">Todas as filiais</option>
+                {formBranches.map(branch => (
+                  <option key={branch} value={branch}>{branch}</option>
+                ))}
+              </Select>
+            </div>
           </div>
-          
-          <div className="mt-4 text-sm text-gray-600">
+
+          <p className="mt-4 text-sm text-gray-600" aria-live="polite">
             Exibindo {filteredForms.length} de {formSubmissions.length} formulários
-          </div>
+          </p>
         </div>
       </Card>
 
       {/* Lista de Formulários */}
-      <div className="grid gap-4">
+      <div className="grid gap-3 sm:gap-4">
         {filteredForms.map((form) => {
           const isExpanded = expandedCards.has(form.id);
-          
+          const fieldCount = form.fieldValues ? Object.keys(form.fieldValues).length : 0;
+          const formName = form.templateName || 'formulário';
+
           return (
             <Card key={form.id} className="hover:shadow-md transition-shadow relative group">
-              <div className="p-6">
-                {/* Cabeçalho clicável para expandir/contrair */}
-                <div 
-                  className="flex justify-between items-start mb-4 cursor-pointer"
-                  onClick={() => toggleCardExpansion(form.id)}
-                >
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-brand-dark flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-brand-primary" />
-                      {form.templateName}
-                      <ChevronDown 
-                        className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </h3>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                      {form.motorista && (
-                        <span className="flex items-center gap-1">
-                          <User className="h-4 w-4" />
-                          {form.motorista}
-                        </span>
-                      )}
-                      {form.filial && (
-                        <span className="flex items-center gap-1">
-                          <Building className="h-4 w-4" />
-                          {form.filial}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        {formatDate(form.data)}
-                      </span>
-                      {form.grading && (
-                        <span className="bg-brand-light text-brand-primary font-medium px-2 py-0.5 rounded-full text-xs">
-                          {form.grading.correct}/{form.grading.total} acertos ({form.grading.percentage}%)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="text-xs text-gray-500">
-                      ID: {form.id.slice(-8)}
-                    </div>
-                    {/* Botão de excluir - aparece apenas no hover */}
+              <div className="p-4 sm:p-6">
+                {/* Cabeçalho que expande/contrai: o botão ocupa toda a área e a exclusão fica ao lado */}
+                <div className="flex items-start gap-2">
+                  <h3 className="min-w-0 flex-1">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation(); // Impede que o clique expanda o card
-                        handleDeleteClick(form.id, form.templateName || 'formulário');
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200"
-                      title="Excluir formulário"
+                      type="button"
+                      onClick={() => toggleCardExpansion(form.id)}
+                      aria-expanded={isExpanded}
+                      className="block w-full min-h-11 rounded-brand text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <span className="flex items-start gap-2 text-base sm:text-lg font-semibold text-brand-dark">
+                        <Icon name="file-text" className="mt-0.5 h-5 w-5 flex-shrink-0 text-brand-primary" />
+                        <span className="min-w-0 flex-1 break-words">{form.templateName}</span>
+                        <Icon
+                          name="chevron-down"
+                          className={`mt-1 h-4 w-4 flex-shrink-0 text-gray-500 transition-transform duration-200 ${
+                            isExpanded ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </span>
+                      <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-normal text-gray-600">
+                        {form.motorista && (
+                          <span className="flex min-w-0 max-w-full items-start gap-1">
+                            <Icon name="user" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <span className="min-w-0 break-words">{form.motorista}</span>
+                          </span>
+                        )}
+                        {form.filial && (
+                          <span className="flex min-w-0 max-w-full items-start gap-1">
+                            <Icon name="building" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <span className="min-w-0 break-words">{form.filial}</span>
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Icon name="calendar" className="h-4 w-4 flex-shrink-0" />
+                          {formatDate(form.data)}
+                        </span>
+                        {form.grading && (
+                          <span className="rounded-full bg-brand-light px-2 py-0.5 text-xs font-medium text-brand-primary">
+                            {form.grading.correct}/{form.grading.total} acertos ({form.grading.percentage}%)
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-500">ID: {form.id.slice(-8)}</span>
+                      </span>
                     </button>
-                  </div>
+                  </h3>
+                  {/* Excluir: sempre visível no toque; com mouse só aparece no hover/foco do cartão */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteClick(form.id, formName)}
+                    aria-label={`Excluir formulário ${formName}`}
+                    title="Excluir formulário"
+                    className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition-all duration-200 hover:bg-red-50 hover:text-red-600 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 sm:h-9 sm:w-9"
+                  >
+                    <Icon name="trash" className="h-5 w-5 sm:h-4 sm:w-4" />
+                  </button>
                 </div>
 
                 {/* Prévia compacta quando minimizado */}
-                {!isExpanded && form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
-                  <div className="mt-3 text-sm text-gray-600">
-                    <span className="bg-gray-100 px-2 py-1 rounded text-xs">
-                      {Object.keys(form.fieldValues).length} campos preenchidos
+                {!isExpanded && fieldCount > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                    <span className="rounded bg-gray-100 px-2 py-1 text-xs">
+                      {fieldCount} campos preenchidos
                     </span>
-                    <span className="text-gray-400 ml-2">
-                      Clique para expandir e ver detalhes
+                    <span className="text-gray-500">
+                      Toque para ver os detalhes
                     </span>
                   </div>
                 )}
@@ -286,10 +348,10 @@ const FormsViewer: React.FC = () => {
                     )}
 
                     {/* Exibir campos do formulário */}
-                    {form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
+                    {fieldCount > 0 && (
                       <div className="mt-4 border-t pt-4">
-                        <h4 className="font-medium text-gray-700 mb-3">Dados Preenchidos:</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <h4 className="font-semibold text-gray-700 mb-3">Dados Preenchidos</h4>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {(() => {
                             // Ordena os campos conforme o template (criteriaConfig) quando disponível.
                             const entries = Object.entries(form.fieldValues || {});
@@ -325,47 +387,47 @@ const FormsViewer: React.FC = () => {
                             }
 
                             return orderedEntries.map(([fieldKey, value]) => (
-                              <div key={fieldKey} className="bg-gray-50 p-3 rounded">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                              <div key={fieldKey} className="min-w-0 rounded-brand bg-gray-50 p-3">
+                                <dt className="mb-1 text-xs font-medium text-gray-600 break-words">
                                   {getFieldName(fieldKey, form.templateId)}
-                                </label>
-                                <div className="text-sm text-gray-800">
+                                </dt>
+                                <dd className="text-sm text-brand-dark break-words whitespace-pre-wrap">
                                   {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
-                                </div>
+                                </dd>
                               </div>
                             ));
                           })()}
-                        </div>
+                        </dl>
                       </div>
                     )}
 
                     {/* Considerações finais se houver */}
                     {(form.pros || form.contras || form.consideracoes) && (
                       <div className="mt-4 border-t pt-4">
-                        <h4 className="font-medium text-gray-700 mb-3">Observações:</h4>
+                        <h4 className="font-semibold text-gray-700 mb-3">Observações</h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {form.pros && (
-                            <div className="bg-green-50 p-3 rounded">
-                              <label className="block text-xs font-medium text-green-700 mb-1">
+                            <div className="min-w-0 rounded-brand bg-green-50 p-3">
+                              <p className="mb-1 text-xs font-medium text-green-700">
                                 Pontos Positivos
-                              </label>
-                              <div className="text-sm text-green-800">{form.pros}</div>
+                              </p>
+                              <p className="text-sm text-green-800 break-words whitespace-pre-wrap">{form.pros}</p>
                             </div>
                           )}
                           {form.contras && (
-                            <div className="bg-red-50 p-3 rounded">
-                              <label className="block text-xs font-medium text-red-700 mb-1">
+                            <div className="min-w-0 rounded-brand bg-red-50 p-3">
+                              <p className="mb-1 text-xs font-medium text-red-700">
                                 Pontos Negativos
-                              </label>
-                              <div className="text-sm text-red-800">{form.contras}</div>
+                              </p>
+                              <p className="text-sm text-red-800 break-words whitespace-pre-wrap">{form.contras}</p>
                             </div>
                           )}
                           {form.consideracoes && (
-                            <div className="bg-blue-50 p-3 rounded">
-                              <label className="block text-xs font-medium text-blue-700 mb-1">
+                            <div className="min-w-0 rounded-brand bg-brand-light p-3">
+                              <p className="mb-1 text-xs font-medium text-brand-primary">
                                 Considerações Finais
-                              </label>
-                              <div className="text-sm text-blue-800">{form.consideracoes}</div>
+                              </p>
+                              <p className="text-sm text-brand-dark break-words whitespace-pre-wrap">{form.consideracoes}</p>
                             </div>
                           )}
                         </div>
@@ -381,50 +443,38 @@ const FormsViewer: React.FC = () => {
 
       {filteredForms.length === 0 && formSubmissions.length > 0 && (
         <Card>
-          <div className="p-8 flex flex-col items-center justify-center text-center">
-            <Search className="h-12 w-12 text-gray-400 mb-4" />
+          <div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center">
+            <Icon name="search" className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-700">Nenhum formulário encontrado</h3>
-            <p className="text-gray-500 mt-2">
+            <p className="text-gray-600 mt-2">
               Tente ajustar os filtros para encontrar os formulários desejados.
             </p>
+            {hasActiveFilters && (
+              <Button variant="secondary" className="mt-4" onClick={clearFilters}>
+                <Icon name="x" className="h-4 w-4" />
+                Limpar filtros
+              </Button>
+            )}
           </div>
         </Card>
       )}
 
-      {/* Popup de confirmação personalizado */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-red-100 p-2 rounded-full">
-                <Trash2 className="h-6 w-6 text-red-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900">Confirmar Exclusão</h3>
-            </div>
-            
-            <p className="text-gray-600 mb-6">
-              Tem certeza que deseja excluir o formulário "{deleteConfirm?.name}"?
-              <br />
-              <span className="text-sm text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
-            </p>
-            
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleCancelDelete}
-                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        title="Confirmar exclusão"
+        message={
+          <>
+            Tem certeza que deseja excluir o formulário "{deleteConfirm?.name}"?
+            <span className="mt-1 block font-medium text-red-600">Esta ação não pode ser desfeita.</span>
+          </>
+        }
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+      />
     </div>
   );
 };

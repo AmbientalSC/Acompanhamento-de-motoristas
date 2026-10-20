@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, Loader2, Eye, EyeOff } from 'lucide-react';
+import Icon from './ui/Icon';
 import { useAuth } from '../contexts/AuthContext';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -30,18 +30,20 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-brand-primary flex items-start sm:items-center justify-center px-4 pt-[calc(2rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))]">
       <div className="w-full max-w-md">
-        <Card className="p-8">
-          <div className="text-center mb-8">
-            <div className="flex justify-center mb-4">
-              <img 
-                src="./ambiental.svg" 
-                alt="Logo Ambiental" 
-                className="h-16 w-auto"
-              />
-            </div>
-            <h1 className="text-2xl font-bold text-brand-dark mb-2">
+        {/* O logo tem texto branco: fica sobre o azul da marca, fora do cartão */}
+        <div className="flex justify-center mb-6">
+          <img
+            src={`${import.meta.env.BASE_URL}ambiental.svg`}
+            alt="Ambiental"
+            className="h-14 sm:h-16 w-auto"
+          />
+        </div>
+
+        <Card className="p-5 sm:p-8">
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-xl sm:text-2xl font-bold text-brand-dark mb-2 break-words">
               Acompanhamento de Motoristas
             </h1>
             <p className="text-gray-600">
@@ -49,44 +51,57 @@ const Login: React.FC = () => {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
+          <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+              required
+              disabled={isLoading}
+            />
+
+            {/* O botão do olho ancora no rodapé do contêiner (o <input> é o último filho do campo): alinha ao input, não ao label */}
+            <div className="relative">
               <Input
-                label="Email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
+                label="Senha"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Digite sua senha"
                 required
                 disabled={isLoading}
+                className="pr-12"
               />
-            </div>
-
-            <div>
-              <div className="relative">
-                <Input
-                  label="Senha"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Digite sua senha"
-                  required
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-8 text-gray-400 hover:text-gray-600"
-                  disabled={isLoading}
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowPassword(prev => !prev)}
+                disabled={isLoading}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-pressed={showPassword}
+                title={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                className="absolute bottom-0 right-0 inline-flex h-11 w-11 items-center justify-center rounded-brand text-gray-500 hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent disabled:opacity-50"
+              >
+                <Icon name={showPassword ? 'eye-off' : 'eye'} className="h-5 w-5" />
+              </button>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-red-700 text-sm">{error}</p>
+              <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-brand">
+                <Icon name="alert-circle" className="h-5 w-5 flex-shrink-0 text-red-600 mt-0.5" />
+                <p className="min-w-0 break-words text-red-700 text-sm">{error}</p>
               </div>
             )}
 
@@ -97,23 +112,21 @@ const Login: React.FC = () => {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  <Icon name="loader-2" className="h-5 w-5 animate-spin" />
                   Entrando...
                 </>
               ) : (
                 <>
-                  <LogIn className="h-5 w-5 mr-2" />
+                  <Icon name="login" className="h-5 w-5" />
                   Entrar
                 </>
               )}
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Apenas usuários autorizados podem acessar este sistema
-            </p>
-          </div>
+          <p className="mt-6 text-center text-sm text-gray-600">
+            Apenas usuários autorizados podem acessar este sistema
+          </p>
         </Card>
       </div>
     </div>

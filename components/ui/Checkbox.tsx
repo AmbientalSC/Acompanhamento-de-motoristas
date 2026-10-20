@@ -10,6 +10,7 @@ interface CheckboxProps {
   className?: string;
 }
 
+// A linha inteira é o <label>: o toque em qualquer ponto marca/desmarca (alvo >= 44px).
 const Checkbox: React.FC<CheckboxProps> = ({
   label,
   name,
@@ -20,29 +21,26 @@ const Checkbox: React.FC<CheckboxProps> = ({
   className = ''
 }) => {
   return (
-    <div className={`space-y-2 ${className}`}>
-      <div className="flex items-start space-x-2">
-        <input
-          type="checkbox"
-          id={name}
-          name={name}
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          required={required}
-          className="mt-1 h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-        />
-        <div className="flex-1">
-          <label htmlFor={name} className="block text-sm font-medium text-gray-700 cursor-pointer">
-            {label}
-            {required && <span className="text-red-500 ml-1">*</span>}
-          </label>
-          
-          {description && (
-            <p className="text-sm text-gray-500 mt-1">{description}</p>
-          )}
-        </div>
-      </div>
-    </div>
+    <label htmlFor={name} className={`flex items-start gap-3 min-h-11 py-2 cursor-pointer ${className}`}>
+      <input
+        type="checkbox"
+        id={name}
+        name={name}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        required={required}
+        className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
+      />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-gray-700 break-words">
+          {label}
+          {required && <span className="text-red-600 ml-1" aria-hidden="true">*</span>}
+        </span>
+        {description && (
+          <span className="block text-sm text-gray-500 mt-1">{description}</span>
+        )}
+      </span>
+    </label>
   );
 };
 

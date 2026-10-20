@@ -7,6 +7,7 @@ import Checkbox from './Checkbox';
 import RatingSlider from '../RatingSlider';
 import RatingSlider5 from './RatingSlider5';
 import QuestionImage from './QuestionImage';
+import Icon from './Icon';
 
 interface DynamicFieldProps {
   criterion: EvaluationCriterion;
@@ -30,7 +31,7 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
         return (
           <div className="space-y-2">
             {description && (
-              <p className="text-sm text-gray-500 mb-2">{description}</p>
+              <p className="text-sm text-gray-500 break-words">{description}</p>
             )}
             <RatingSlider
               label={name}
@@ -45,7 +46,7 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
         return (
           <div className="space-y-2">
             {description && (
-              <p className="text-sm text-gray-500 mb-2">{description}</p>
+              <p className="text-sm text-gray-500 break-words">{description}</p>
             )}
             <RatingSlider5
               label={name}
@@ -67,7 +68,7 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
               placeholder={placeholder}
             />
             {description && (
-              <p className="text-sm text-gray-500">{description}</p>
+              <p className="text-sm text-gray-500 break-words">{description}</p>
             )}
           </div>
         );
@@ -87,7 +88,7 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
               placeholder={placeholder || 'Digite o número'}
             />
             {description && (
-              <p className="text-sm text-gray-500">{description}</p>
+              <p className="text-sm text-gray-500 break-words">{description}</p>
             )}
           </div>
         );
@@ -138,7 +139,8 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
   };
 
   return (
-    <div id={`field-${criterion.id}`} className="space-y-2">
+    // scroll-mt: ao rolar até o campo com erro, o cabeçalho fixo do App não pode cobri-lo
+    <div id={`field-${criterion.id}`} className="min-w-0 scroll-mt-20 space-y-2">
       {(imageUrl || hasNumberLegend) && (
         <QuestionImage
           src={imageUrl || undefined}
@@ -148,7 +150,10 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
       )}
       {renderField()}
       {error && (
-        <p className="text-sm text-red-600">{error}</p>
+        <p role="alert" className="flex items-start gap-1.5 text-sm font-medium text-red-700">
+          <Icon name="alert-circle" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span className="min-w-0 break-words">{error}</span>
+        </p>
       )}
     </div>
   );

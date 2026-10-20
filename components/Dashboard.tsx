@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Loader2, AlertTriangle, BarChartHorizontal, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import Icon from './ui/Icon';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations } from '../services/evaluationService';
 import { getTemplates } from '../services/firebaseService';
@@ -87,22 +87,20 @@ const Dashboard: React.FC = () => {
   
   const renderAverageStatus = (score: number) => {
     if (score > 7) {
-      return <div className="flex items-center gap-2 text-green-600"><CheckCircle className="h-6 w-6" /> <span className="font-bold text-lg">Aprovado ({score.toFixed(2)})</span></div>;
+      return <div className="flex items-center gap-2 text-green-600"><Icon name="circle-check" className="h-6 w-6" /> <span className="font-bold text-lg">Aprovado ({score.toFixed(2)})</span></div>;
     }
     if (score >= 6) {
-      return <div className="flex items-center gap-2 text-yellow-500"><Clock className="h-6 w-6" /> <span className="font-bold text-lg">Reavaliar ({score.toFixed(2)})</span></div>;
+      return <div className="flex items-center gap-2 text-yellow-500"><Icon name="clock" className="h-6 w-6" /> <span className="font-bold text-lg">Reavaliar ({score.toFixed(2)})</span></div>;
     }
-    return <div className="flex items-center gap-2 text-red-600"><AlertCircle className="h-6 w-6" /> <span className="font-bold text-lg">Reprovado ({score.toFixed(2)})</span></div>;
+    return <div className="flex items-center gap-2 text-red-600"><Icon name="alert-circle" className="h-6 w-6" /> <span className="font-bold text-lg">Reprovado ({score.toFixed(2)})</span></div>;
   };
 
   const renderStatusBadge = (score: number) => {
     const status = getEvaluationStatus(score);
-    const IconComponent = status.icon === 'CheckCircle' ? CheckCircle : 
-                         status.icon === 'Clock' ? Clock : AlertCircle;
     
     return (
       <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.bgColor} ${status.color}`}>
-        <IconComponent className="h-3 w-3" />
+        <Icon name={status.icon} className="h-3 w-3" />
         {status.label}
       </div>
     );
@@ -111,7 +109,7 @@ const Dashboard: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-12 w-12 animate-spin text-brand-primary" />
+        <Icon name="loader-2" className="h-12 w-12 animate-spin text-brand-primary" />
         <p className="ml-4 text-lg text-gray-600">Carregando dados...</p>
       </div>
     );
@@ -121,7 +119,7 @@ const Dashboard: React.FC = () => {
     return (
       <Card>
         <div className="p-8 flex flex-col items-center justify-center text-center">
-            <AlertTriangle className="h-16 w-16 text-yellow-400 mb-4" />
+            <Icon name="alert-triangle" className="h-16 w-16 text-yellow-400 mb-4" />
             <h3 className="text-xl font-semibold text-gray-700">Nenhuma Avaliação Encontrada</h3>
             <p className="text-gray-500 mt-2">Ainda não há dados para exibir. Comece preenchendo o formulário de avaliação.</p>
         </div>
@@ -234,7 +232,7 @@ const Dashboard: React.FC = () => {
             ) : (
               <Card>
                 <div className="p-8 h-full flex flex-col items-center justify-center text-center">
-                  <BarChartHorizontal className="h-16 w-16 text-blue-400 mb-4" />
+                  <Icon name="chart-bar" className="h-16 w-16 text-blue-400 mb-4" />
                   <h3 className="text-xl font-semibold text-gray-700">Selecione uma Avaliação</h3>
                   <p className="text-gray-500 mt-2">Clique em uma das avaliações na lista à esquerda para ver os detalhes completos.</p>
                 </div>
@@ -245,7 +243,7 @@ const Dashboard: React.FC = () => {
       ) : selectedDriver ? (
         <Card>
           <div className="p-8 flex flex-col items-center justify-center text-center">
-              <AlertTriangle className="h-16 w-16 text-yellow-400 mb-4" />
+              <Icon name="alert-triangle" className="h-16 w-16 text-yellow-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-700">Nenhuma avaliação encontrada</h3>
               <p className="text-gray-500 mt-2">Não há dados de avaliação para o motorista {selectedDriver}.</p>
           </div>

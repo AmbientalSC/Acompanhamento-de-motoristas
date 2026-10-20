@@ -1,4 +1,5 @@
 import React from 'react';
+import { FIELD_CLASSES } from './fieldStyles';
 
 interface DateInputProps {
   label: string;
@@ -29,13 +30,13 @@ const DateInput: React.FC<DateInputProps> = ({
     <div className={`space-y-2 ${className}`}>
       <label htmlFor={name} className="block text-sm font-medium text-gray-700">
         {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
+        {required && <span className="text-red-600 ml-1" aria-hidden="true">*</span>}
       </label>
-      
+
       {description && (
         <p className="text-sm text-gray-500">{description}</p>
       )}
-      
+
       <input
         type="date"
         id={name}
@@ -46,7 +47,7 @@ const DateInput: React.FC<DateInputProps> = ({
         placeholder={placeholder}
         min={min}
         max={max}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-accent focus:border-brand-accent sm:text-sm"
+        className={FIELD_CLASSES}
       />
     </div>
   );

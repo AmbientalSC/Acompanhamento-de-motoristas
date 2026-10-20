@@ -1,16 +1,4 @@
-
-import React, { useState } from 'react';
-import {
-  ClipboardList,
-  LayoutDashboard,
-  FileText,
-  PieChart,
-  LogOut,
-  User,
-  Menu,
-  X,
-  Medal,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import EvaluationForm from './components/EvaluationForm';
 import DriverDashboard from './components/DriverDashboard';
 import TemplateManager from './components/TemplateManager';
@@ -18,13 +6,52 @@ import GeneralDashboard from './components/GeneralDashboard';
 import MN10Dashboard from './components/mn10/MN10Dashboard';
 import { useAuth } from './contexts/AuthContext';
 import Button from './components/ui/Button';
+import Icon from './components/ui/Icon';
+import type { IconName } from './components/ui/iconNames';
 
 type Tab = 'form' | 'driver-dashboard' | 'general-dashboard' | 'templates' | 'mn10';
 
+interface NavItem {
+  tab: Tab;
+  label: string; // rótulo completo (abas do desktop)
+  shortLabel: string; // rótulo curto (barra inferior do celular)
+  icon: IconName;
+  requires?: 'manage' | 'mn10';
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { tab: 'form', label: 'Formulário de Avaliação', shortLabel: 'Avaliar', icon: 'clipboard-list' },
+  { tab: 'general-dashboard', label: 'Dashboard Geral', shortLabel: 'Geral', icon: 'chart-pie' },
+  { tab: 'driver-dashboard', label: 'Análise por Motorista', shortLabel: 'Motoristas', icon: 'user-search' },
+  { tab: 'templates', label: 'Gerenciar', shortLabel: 'Gerenciar', icon: 'settings', requires: 'manage' },
+  { tab: 'mn10', label: 'MN10', shortLabel: 'MN10', icon: 'medal', requires: 'mn10' },
+];
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('general-dashboard');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const { currentUser, logout, canManageSystem, canAccessMN10 } = useAuth();
+
+  const visibleItems = NAV_ITEMS.filter(item => {
+    if (item.requires === 'manage') return canManageSystem;
+    if (item.requires === 'mn10') return canAccessMN10;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!isUserMenuOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsUserMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isUserMenuOpen]);
+
+  const handleTabClick = (tab: Tab) => {
+    setActiveTab(tab);
+    setIsUserMenuOpen(false);
+    window.scrollTo({ top: 0 });
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -43,145 +70,122 @@ const App: React.FC = () => {
     }
   };
 
-  const TabButton: React.FC<{ tabName: Tab; label: string; icon: React.ReactNode; onClick?: () => void }> = ({ 
-    tabName, 
-    label, 
-    icon, 
-    onClick 
-  }) => (
-    <button
-      onClick={onClick || (() => setActiveTab(tabName))}
-      className={`flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-semibold rounded-t-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent whitespace-nowrap ${
-        activeTab === tabName
-          ? 'bg-white text-brand-primary border-b-2 border-brand-primary'
-          : 'bg-transparent text-gray-500 hover:bg-blue-100 hover:text-brand-secondary'
-      }`}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-      <span className="sm:hidden">{label.split(' ')[0]}</span>
-    </button>
-  );
-
-  const handleTabClick = (tab: Tab) => {
-    setActiveTab(tab);
-    setMobileMenuOpen(false);
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      <header className="bg-brand-primary shadow-md">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 sm:h-20">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <img 
-                src="./ambiental.svg" 
-                alt="Logo Ambiental" 
-                className="h-8 w-auto sm:h-12"
-              />
+    <div className="min-h-dvh bg-gray-50 font-sans text-brand-text pb-[calc(4.25rem+env(safe-area-inset-bottom))] sm:pb-0">
+      <header className="sticky top-0 z-30 bg-brand-primary shadow-md pt-[env(safe-area-inset-top)]">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3 h-16 sm:h-20">
+            <img
+              src={`${import.meta.env.BASE_URL}ambiental.svg`}
+              alt="Ambiental"
+              className="h-9 w-auto sm:h-12 flex-shrink-0"
+            />
+            <h1 className="flex-1 min-w-0 text-sm leading-tight sm:text-xl font-bold text-white sm:text-center">
+              Acompanhamento de Motoristas
+            </h1>
+
+            {/* Desktop: e-mail e sair */}
+            <div className="hidden sm:flex items-center gap-3 text-white">
+              <span className="flex items-center gap-2 text-sm">
+                <Icon name="user" aria-hidden />
+                <span className="max-w-[220px] truncate">{currentUser?.email}</span>
+              </span>
+              <Button onClick={logout} variant="onDark" size="sm">
+                <Icon name="logout" aria-hidden />
+                Sair
+              </Button>
             </div>
-            <div className="flex-1 flex justify-center">
-              <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight text-center">
-                Acompanhamento de Motoristas
-              </h1>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* Desktop User Info */}
-              <div className="hidden sm:flex items-center gap-2 text-white">
-                <User className="h-4 w-4" />
-                <span className="text-sm">{currentUser?.email}</span>
+
+            {/* Celular: menu da conta */}
+            <button
+              type="button"
+              onClick={() => setIsUserMenuOpen(open => !open)}
+              aria-expanded={isUserMenuOpen}
+              aria-controls="user-menu"
+              aria-label={isUserMenuOpen ? 'Fechar menu da conta' : 'Abrir menu da conta'}
+              title={isUserMenuOpen ? 'Fechar menu da conta' : 'Abrir menu da conta'}
+              className="sm:hidden flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-brand text-white hover:bg-white/10 active:bg-white/20"
+            >
+              <Icon name={isUserMenuOpen ? 'x' : 'menu-2'} className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+
+        {isUserMenuOpen && (
+          <div id="user-menu" className="sm:hidden bg-white border-b border-gray-200 shadow-lg">
+            <div className="px-4 py-3 space-y-3">
+              <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                <Icon name="user" aria-hidden />
+                <span className="text-sm truncate">{currentUser?.email}</span>
               </div>
-              
-              {/* Mobile Menu Button */}
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="sm:hidden text-white p-2"
-              >
-                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </button>
-              
-              {/* Desktop Logout Button */}
-              <Button
-                onClick={logout}
-                variant="secondary"
-                className="hidden sm:flex !bg-white !text-brand-primary hover:!bg-gray-100 !py-1 !px-3 text-sm"
-              >
-                <LogOut className="h-4 w-4 mr-1" />
+              <Button onClick={logout} variant="secondary" className="w-full">
+                <Icon name="logout" aria-hidden />
                 Sair
               </Button>
             </div>
           </div>
-        </div>
+        )}
       </header>
 
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <div className="sm:hidden bg-white border-b border-gray-200 shadow-lg">
-          <div className="px-4 py-2">
-            <div className="flex items-center gap-2 text-gray-600 mb-3">
-              <User className="h-4 w-4" />
-              <span className="text-sm truncate">{currentUser?.email}</span>
-            </div>
-            <Button
-              onClick={logout}
-              variant="secondary"
-              className="w-full !bg-gray-100 !text-gray-700 hover:!bg-gray-200 !py-2 text-sm"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Sair
-            </Button>
-          </div>
+      {/* Desktop: abas */}
+      <nav className="hidden sm:block bg-white border-b border-gray-200" aria-label="Navegação principal">
+        <div className="w-full px-6 lg:px-8 flex gap-2">
+          {visibleItems.map(item => {
+            const isActive = activeTab === item.tab;
+            return (
+              <button
+                key={item.tab}
+                type="button"
+                onClick={() => handleTabClick(item.tab)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-4 whitespace-nowrap transition-colors focus:outline-none focus-visible:bg-brand-light ${
+                  isActive
+                    ? 'border-brand-green text-brand-primary'
+                    : 'border-transparent text-gray-500 hover:text-brand-primary hover:bg-brand-light'
+                }`}
+              >
+                <Icon name={item.icon} className="h-5 w-5" />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </nav>
 
-      <main className="container mx-auto p-2 sm:p-4 lg:p-6">
-        <div className="border-b border-gray-200 mb-4 sm:mb-6">
-          <nav className="-mb-px flex flex-wrap gap-1 sm:gap-4 overflow-x-auto" aria-label="Tabs">
-            <TabButton 
-              tabName="form" 
-              label="Formulário de Avaliação" 
-              icon={<ClipboardList className="h-4 w-4 sm:h-5 sm:w-5" />}
-              onClick={() => handleTabClick('form')}
-            />
-            <TabButton 
-              tabName="general-dashboard" 
-              label="Dashboard Geral" 
-              icon={<PieChart className="h-4 w-4 sm:h-5 sm:w-5" />}
-              onClick={() => handleTabClick('general-dashboard')}
-            />
-            <TabButton 
-              tabName="driver-dashboard" 
-              label="Análise por Motorista" 
-              icon={<LayoutDashboard className="h-4 w-4 sm:h-5 sm:w-5" />}
-              onClick={() => handleTabClick('driver-dashboard')}
-            />
-            {canManageSystem && (
-              <TabButton 
-                tabName="templates" 
-                label="Gerenciar" 
-                icon={<FileText className="h-4 w-4 sm:h-5 sm:w-5" />}
-                onClick={() => handleTabClick('templates')}
-              />
-            )}
-            {canAccessMN10 && (
-              <TabButton
-                tabName="mn10"
-                label="MN10"
-                icon={<Medal className="h-4 w-4 sm:h-5 sm:w-5" />}
-                onClick={() => handleTabClick('mn10')}
-              />
-            )}
-          </nav>
-        </div>
-        
-        <div>
-          {renderContent()}
-        </div>
+      <main className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {renderContent()}
       </main>
 
-       <footer className="text-center py-4 mt-8 text-gray-500 text-xs sm:text-sm">
-        <p>&copy; {new Date().getFullYear()} Acompanhamento de motoristas.</p>
+      <footer className="text-center py-4 text-brand-gray-mid text-xs sm:text-sm">
+        <p>&copy; {new Date().getFullYear()} Ambiental · Acompanhamento de motoristas</p>
       </footer>
+
+      {/* Celular: barra de navegação inferior */}
+      <nav
+        className="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] pb-[env(safe-area-inset-bottom)]"
+        aria-label="Navegação principal"
+      >
+        <div className="flex">
+          {visibleItems.map(item => {
+            const isActive = activeTab === item.tab;
+            return (
+              <button
+                key={item.tab}
+                type="button"
+                onClick={() => handleTabClick(item.tab)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex-1 min-w-0 min-h-[4rem] flex flex-col items-center justify-center gap-1 px-1 text-[11px] font-semibold leading-none transition-colors active:bg-brand-light ${
+                  isActive ? 'text-brand-primary' : 'text-gray-500'
+                }`}
+              >
+                {isActive && <span className="absolute top-0 inset-x-3 h-1 rounded-b bg-brand-green" aria-hidden="true" />}
+                <Icon name={item.icon} className="h-6 w-6" />
+                <span className="max-w-full truncate">{item.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

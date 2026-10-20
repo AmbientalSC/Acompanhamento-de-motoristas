@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import './styles/tabler-icons.css';
 
 @tailwind base;
 @tailwind components;
@@ -6,15 +6,36 @@
 
 /* Estilos globais para o projeto */
 
+:root {
+  /* Identidade visual Ambiental */
+  --color-blue: #164194;
+  --color-blue-dark: #003087;
+  --color-green: #A8C950;
+  --color-green-mid: #95C11F;
+  --color-green-dark: #9BBF3B;
+  --color-green-natural: #63B869;
+  --color-white: #FFFFFF;
+  --color-gray-light: #F7F7F7;
+  --color-gray-mid: #808080;
+  --color-gray-blue: #7C91BB;
+  --color-text: #312D31;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -22,6 +43,24 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Toque: remove o atraso de duplo toque e o destaque cinza do WebKit */
+a,
+button,
+input,
+select,
+textarea,
+label,
+[role='button'] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Teclado: foco visível apenas para navegação por teclado */
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 2px;
 }
 
 /* Scrollbar personalizada */

@@ -1,11 +1,12 @@
 // Utilitários para avaliação de motoristas
+import type { IconName } from '../components/ui/iconNames';
 
 export interface EvaluationStatus {
   status: 'approved' | 'review' | 'rejected';
   label: string;
   color: string;
   bgColor: string;
-  icon: string;
+  icon: IconName;
 }
 
 /**
@@ -22,7 +23,7 @@ export const getEvaluationStatus = (score: number, scale?: string): EvaluationSt
         label: 'Aprovado',
         color: 'text-green-600',
         bgColor: 'bg-green-100',
-        icon: 'CheckCircle'
+        icon: 'circle-check'
       };
     }
     return {
@@ -30,7 +31,7 @@ export const getEvaluationStatus = (score: number, scale?: string): EvaluationSt
       label: 'Reprovado',
       color: 'text-red-600',
       bgColor: 'bg-red-100',
-      icon: 'AlertCircle'
+      icon: 'alert-circle'
     };
   }
 
@@ -40,7 +41,7 @@ export const getEvaluationStatus = (score: number, scale?: string): EvaluationSt
       label: 'Aprovado',
       color: 'text-green-600',
       bgColor: 'bg-green-100',
-      icon: 'CheckCircle'
+      icon: 'circle-check'
     };
   }
   
@@ -50,7 +51,7 @@ export const getEvaluationStatus = (score: number, scale?: string): EvaluationSt
       label: 'Reavaliar',
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-100',
-      icon: 'Clock'
+      icon: 'clock'
     };
   }
   
@@ -59,7 +60,7 @@ export const getEvaluationStatus = (score: number, scale?: string): EvaluationSt
     label: 'Reprovado',
     color: 'text-red-600',
     bgColor: 'bg-red-100',
-    icon: 'AlertCircle'
+    icon: 'alert-circle'
   };
 };
 

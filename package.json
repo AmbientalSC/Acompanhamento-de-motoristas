@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "icons": "node scripts/generate-tabler-icons.mjs",
     "deploy": "npm run build && gh-pages --dist dist"
   },
   "dependencies": {
     "firebase": "^12.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.1.0",
-    "lucide-react": "^0.528.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-is": "^19.1.1",

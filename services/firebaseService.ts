@@ -16,6 +16,7 @@ import {
 } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import type { Evaluation, EvaluationTemplate, User } from '../types';
+import { normalizeEvaluationName } from '../utils/nameUtils';
 
 // Serviços para Modelos (Templates)
 export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
@@ -165,7 +166,8 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         setor: data.setor,
         turno: data.turno,
         filial: data.filial,
-        motorista: data.motorista,
+        // Nomes padronizados em maiúsculas na leitura: agrupa variações de caixa e cobre registros antigos
+        motorista: normalizeEvaluationName(data.motorista),
         data: data.data,
         vt: data.vt,
         timestamp: data.timestamp.toMillis(),
@@ -175,7 +177,7 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         fieldValues: data.fieldValues || {},
         averageScore: data.averageScore,
         ratingScale: data.ratingScale,
-        nomeColaborador: data.nomeColaborador,
+        nomeColaborador: data.nomeColaborador ? normalizeEvaluationName(data.nomeColaborador) : data.nomeColaborador,
         funcao: data.funcao,
         turnoPrincipal: data.turnoPrincipal,
         equipeSetor: data.equipeSetor,

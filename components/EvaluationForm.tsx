@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Save, RotateCcw, Loader2 } from 'lucide-react';
+import Icon from './ui/Icon';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import { gradeEvaluation } from '../utils/gradingUtils';
+import { normalizePersonName } from '../utils/nameUtils';
 import RatingSlider from './RatingSlider';
 import DynamicField from './ui/DynamicField';
 import EvaluationResult from './EvaluationResult';
@@ -48,6 +49,14 @@ const getMissingRatingErrors = (
   return errors;
 };
 
+// Mensagem de erro inline (role="alert": leitores de tela anunciam quando aparece)
+const ErrorBanner: React.FC<{ message: string; className?: string }> = ({ message, className = '' }) => (
+  <div role="alert" className={`flex items-start gap-2 rounded-brand border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 ${className}`}>
+    <Icon name="alert-circle" className="mt-0.5 h-5 w-5 flex-shrink-0" />
+    <span className="min-w-0 break-words">{message}</span>
+  </div>
+);
+
 const EvaluationForm: React.FC = () => {
   const [formStep, setFormStep] = useState(1); // 1: seleção de modelo, 2: preenchimento, 3: resultado
   const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
@@ -62,6 +71,10 @@ const EvaluationForm: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedEvaluation, setLastSavedEvaluation] = useState<Evaluation | null>(null);
+  // Mensagens de erro exibidas inline (banners), sem diálogos do navegador
+  const [loadFailed, setLoadFailed] = useState({ templates: false, branches: false });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   // Filiais ordenadas alfabeticamente
   const sortedBranches = useMemo(() => {
@@ -76,7 +89,7 @@ const EvaluationForm: React.FC = () => {
         setTemplates(fetchedTemplates);
       } catch (error) {
         console.error("Falha ao carregar modelos:", error);
-        alert("Não foi possível carregar os modelos de avaliação.");
+        setLoadFailed(prev => ({ ...prev, templates: true }));
       } finally {
         setIsLoadingTemplates(false);
       }
@@ -89,7 +102,7 @@ const EvaluationForm: React.FC = () => {
         setBranches(fetchedBranches);
       } catch (error) {
         console.error("Falha ao carregar filiais:", error);
-        alert("Não foi possível carregar as filiais.");
+        setLoadFailed(prev => ({ ...prev, branches: true }));
       } finally {
         setIsLoadingBranches(false);
       }
@@ -124,6 +137,7 @@ const EvaluationForm: React.FC = () => {
 
       setScores({});
       setErrors({});
+      setSubmitError(null);
       setFormStep(2);
     }
   };
@@ -176,6 +190,8 @@ const EvaluationForm: React.FC = () => {
     setScores({});
     setFieldValues({});
     setErrors({});
+    setSubmitError(null);
+    setPdfError(null);
     setSelectedTemplate(null);
     setFormStep(1);
     setLastSavedEvaluation(null);
@@ -184,6 +200,8 @@ const EvaluationForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTemplate) return;
+
+    setSubmitError(null);
 
     const missingRatings = getMissingRatingErrors(selectedTemplate, scores);
     const firstMissingId = Object.keys(missingRatings)[0];
@@ -217,11 +235,11 @@ const EvaluationForm: React.FC = () => {
         templateName: selectedTemplate.name,
         motorista: !hasHeader ? 
                    `Formulário ${selectedTemplate.name}` : 
-                   (isRhHeader ? formData.nomeColaborador || '' : formData.motorista),
+                   (isRhHeader ? normalizePersonName(formData.nomeColaborador || '') : normalizePersonName(formData.motorista)),
     };
 
     if (isRhHeader) {
-      evaluationToSave.nomeColaborador = formData.nomeColaborador || '';
+      evaluationToSave.nomeColaborador = normalizePersonName(formData.nomeColaborador || '');
       evaluationToSave.funcao = formData.funcao || '';
       evaluationToSave.turnoPrincipal = formData.turnoPrincipal || '';
       evaluationToSave.equipeSetor = formData.equipeSetor || '';
@@ -257,15 +275,17 @@ const EvaluationForm: React.FC = () => {
       setFormStep(3);
     } catch (error) {
       console.error("Falha ao salvar avaliação:", error);
-      alert("Falha ao salvar a avaliação. Tente novamente.");
+      setSubmitError('Falha ao salvar a avaliação. Tente novamente.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleGeneratePDF = async () => {
+    setPdfError(null);
+
     if (!lastSavedEvaluation) {
-      alert('Nenhuma avaliação salva recentemente para gerar PDF.');
+      setPdfError('Nenhuma avaliação salva recentemente para gerar PDF.');
       return;
     }
 
@@ -273,7 +293,7 @@ const EvaluationForm: React.FC = () => {
       await PDFService.generateEvaluationPDF(lastSavedEvaluation);
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
-      alert('Erro ao gerar PDF. Tente novamente.');
+      setPdfError('Erro ao gerar PDF. Tente novamente.');
     }
   };
   
@@ -291,16 +311,16 @@ const EvaluationForm: React.FC = () => {
     
     // Sem notas respondidas não há média para classificar
     if (score === undefined || score === null) {
-      return <span className="text-xl font-medium text-gray-400">—</span>;
+      return <span className="text-xl font-medium text-gray-500" aria-label="Sem média ainda">—</span>;
     }
-    
+
     let statusText: string;
     let statusColor: string;
 
     if (isPureRating5) {
       if (score >= 3) {
         statusText = 'Aprovado';
-        statusColor = 'text-green-600';
+        statusColor = 'text-green-700';
       } else {
         statusText = 'Reprovado';
         statusColor = 'text-red-600';
@@ -308,10 +328,10 @@ const EvaluationForm: React.FC = () => {
     } else {
       if (score > 7) {
         statusText = 'Aprovado';
-        statusColor = 'text-green-600';
-      } else if (score >= 6) { 
+        statusColor = 'text-green-700';
+      } else if (score >= 6) {
         statusText = 'Reavaliar';
-        statusColor = 'text-yellow-500';
+        statusColor = 'text-yellow-600';
       } else {
         statusText = 'Reprovado';
         statusColor = 'text-red-600';
@@ -319,15 +339,25 @@ const EvaluationForm: React.FC = () => {
     }
     return (
       <div className="flex items-baseline gap-2">
-        <span className={`text-3xl font-bold ${statusColor}`}>{statusText}</span>
-        <span className="text-xl font-medium text-gray-500">({score.toFixed(2)})</span>
+        <span className={`text-xl sm:text-3xl font-bold ${statusColor}`}>{statusText}</span>
+        <span className="text-base sm:text-xl font-medium text-gray-600">({score.toFixed(2)})</span>
       </div>
     );
   };
 
   if (isLoadingTemplates || isLoadingBranches) {
-    return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-brand-primary" /><p className="ml-4 text-lg text-gray-600">Carregando dados...</p></div>;
+    return (
+      <div role="status" aria-live="polite" className="flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 h-64">
+        <Icon name="loader-2" className="h-12 w-12 animate-spin text-brand-primary" />
+        <p className="text-base sm:text-lg text-gray-600">Carregando dados...</p>
+      </div>
+    );
   }
+
+  const loadErrorMessage = [
+    loadFailed.templates && 'Não foi possível carregar os modelos de avaliação.',
+    loadFailed.branches && 'Não foi possível carregar as filiais.',
+  ].filter(Boolean).join(' ');
 
   if (formStep === 3 && lastSavedEvaluation) {
     return (
@@ -335,58 +365,79 @@ const EvaluationForm: React.FC = () => {
         evaluation={lastSavedEvaluation}
         onGeneratePDF={handleGeneratePDF}
         onNewEvaluation={resetForm}
+        errorMessage={pdfError}
       />
     );
   }
 
   if (formStep === 1) {
     return (
-      <Card>
-        <div className="p-8 text-center">
-          <h2 className="text-2xl font-bold text-brand-dark mb-2">Iniciar Nova Avaliação</h2>
-          <p className="text-gray-600 mb-6">Selecione o modelo de formulário que deseja utilizar.</p>
-          {templates.length > 0 ? (
-            <div className="max-w-md mx-auto">
-              <Select
-                label="Modelo de Avaliação"
-                name="template"
-                onChange={(e) => handleTemplateSelection(e.target.value)}
-                defaultValue=""
-              >
-                <option value="" disabled>Escolha um modelo...</option>
-                {templates.map(template => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
-                ))}
-              </Select>
-            </div>
-          ) : (
-            <div className="text-center p-4 border-l-4 border-yellow-400 bg-yellow-50 text-yellow-700">
-                <p className="font-bold">Nenhum Modelo Encontrado</p>
-                <p>Por favor, crie um modelo na aba "Gerenciar Modelos" antes de iniciar uma avaliação.</p>
-            </div>
-          )}
-        </div>
-      </Card>
+      <div className="space-y-4">
+        {loadErrorMessage && <ErrorBanner message={loadErrorMessage} />}
+        <Card>
+          <div className="p-4 sm:p-8 text-center">
+            <h2 className="text-xl sm:text-2xl font-bold text-brand-dark mb-2">Iniciar Nova Avaliação</h2>
+            <p className="text-gray-600 mb-6">Selecione o modelo de formulário que deseja utilizar.</p>
+            {templates.length > 0 ? (
+              <div className="max-w-md mx-auto text-left">
+                <Select
+                  label="Modelo de Avaliação"
+                  name="template"
+                  onChange={(e) => handleTemplateSelection(e.target.value)}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Escolha um modelo...</option>
+                  {templates.map(template => (
+                    <option key={template.id} value={template.id}>{template.name}</option>
+                  ))}
+                </Select>
+              </div>
+            ) : (
+              <div role="status" className="text-left p-4 border-l-4 border-yellow-400 bg-yellow-50 text-yellow-800 break-words">
+                  <p className="font-bold">Nenhum Modelo Encontrado</p>
+                  <p>Por favor, crie um modelo na aba "Gerenciar Modelos" antes de iniciar uma avaliação.</p>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
     );
   }
 
+  const hasAverageHeader = selectedTemplate?.headerType === 'evaluation' || selectedTemplate?.headerType === 'rh';
+
+  // Rótulo do botão de envio conforme o tipo do modelo (mantém os textos de cada barra original)
+  const submitLabel = hasAverageHeader
+    ? 'Salvar Avaliação'
+    : selectedTemplate?.includeHeader === false
+      ? 'Enviar Formulário'
+      : 'Salvar';
+
+  // Erro de envio, ou resumo dos campos de nota obrigatórios pendentes (some conforme o usuário responde)
+  const pendingRatingCount = Object.keys(errors).length;
+  const actionBarError = submitError
+    ?? (pendingRatingCount > 0
+      ? `Responda ${pendingRatingCount === 1 ? 'o campo de nota obrigatório pendente' : `os ${pendingRatingCount} campos de nota obrigatórios pendentes`} antes de salvar.`
+      : null);
+
   return (
     <form onSubmit={handleSubmit}>
+      {loadErrorMessage && <ErrorBanner message={loadErrorMessage} className="mb-4" />}
       <Card>
-        <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-brand-dark">Modelo: <span className="text-brand-primary">{selectedTemplate?.name}</span></h2>
-            <Button type="button" onClick={() => setFormStep(1)} variant="secondary" className="!py-1 !px-3 text-sm">
+        <div className="p-4 bg-brand-gray border-b border-gray-200 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <h2 className="min-w-0 flex-1 basis-48 break-words text-base sm:text-lg font-semibold text-brand-dark">Modelo: <span className="text-brand-primary">{selectedTemplate?.name}</span></h2>
+            <Button type="button" onClick={() => setFormStep(1)} variant="secondary" size="sm" className="flex-shrink-0">
                 Trocar Modelo
             </Button>
         </div>
         {selectedTemplate?.headerType === 'evaluation' && (
-          <div className="p-6">
-            <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho da Avaliação</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Input label="Matrícula" name="matricula" value={formData.matricula} onChange={handleInputChange} />
-              <Input label="Motorista" name="motorista" value={formData.motorista} onChange={handleInputChange} required />
-              <Input label="Setor Acompanhado" name="setor" value={formData.setor} onChange={handleInputChange} />
-              <Input label="VT (Veículo)" name="vt" value={formData.vt} onChange={handleInputChange} required />
+          <div className="p-4 sm:p-6">
+            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho da Avaliação</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <Input label="Matrícula" name="matricula" autoComplete="off" value={formData.matricula} onChange={handleInputChange} />
+              <Input label="Motorista" name="motorista" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.motorista} onChange={handleInputChange} required />
+              <Input label="Setor Acompanhado" name="setor" autoComplete="off" value={formData.setor} onChange={handleInputChange} />
+              <Input label="VT (Veículo)" name="vt" autoComplete="off" value={formData.vt} onChange={handleInputChange} required />
               <Select
                 label="Turno"
                 name="turno"
@@ -416,11 +467,11 @@ const EvaluationForm: React.FC = () => {
           </div>
         )}
         {selectedTemplate?.headerType === 'rh' && (
-          <div className="p-6">
-            <h3 className="text-xl font-bold text-brand-dark mb-6">Cabeçalho de RH</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Input label="Nome do Colaborador" name="nomeColaborador" value={formData.nomeColaborador || ''} onChange={handleInputChange} required />
-              <Input label="Função" name="funcao" value={formData.funcao || ''} onChange={handleInputChange} />
+          <div className="p-4 sm:p-6">
+            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho de RH</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              <Input label="Nome do Colaborador" name="nomeColaborador" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.nomeColaborador || ''} onChange={handleInputChange} required />
+              <Input label="Função" name="funcao" autoComplete="off" value={formData.funcao || ''} onChange={handleInputChange} />
               <Select
                 label="Turno Principal"
                 name="turnoPrincipal"
@@ -432,7 +483,7 @@ const EvaluationForm: React.FC = () => {
                 <option value="Tarde">Tarde</option>
                 <option value="Noite">Noite</option>
               </Select>
-              <Input label="Equipe/Setor" name="equipeSetor" value={formData.equipeSetor || ''} onChange={handleInputChange} />
+              <Input label="Equipe/Setor" name="equipeSetor" autoComplete="off" value={formData.equipeSetor || ''} onChange={handleInputChange} />
               <Select
                 label="Filial"
                 name="filial"
@@ -453,10 +504,10 @@ const EvaluationForm: React.FC = () => {
       </Card>
       
       {selectedTemplate && ((selectedTemplate.criteriaConfig && selectedTemplate.criteriaConfig.length > 0) || (selectedTemplate.criteria && selectedTemplate.criteria.length > 0)) && (
-          <Card className="mt-6">
-            <div className="p-6">
-              <h3 className="text-xl font-bold text-brand-dark mb-6">Critérios de Avaliação</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+          <Card className="mt-4 sm:mt-6">
+            <div className="p-4 sm:p-6">
+              <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Critérios de Avaliação</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 lg:gap-x-8 gap-y-5 sm:gap-y-6">
                 {selectedTemplate.criteriaConfig ? (
                   selectedTemplate.criteriaConfig.map(criterion => {
                     const fieldValue = isRatingType(criterion.type)
@@ -496,10 +547,10 @@ const EvaluationForm: React.FC = () => {
       )}
 
       {selectedTemplate?.includeFinalConsiderations === true && (
-        <Card className="mt-6">
-          <div className="p-6">
-            <h3 className="text-xl font-bold text-brand-dark mb-6">Considerações Finais</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="mt-4 sm:mt-6">
+          <div className="p-4 sm:p-6">
+            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Considerações Finais</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
               <Textarea label="Prós em relação a condução apresentada?" name="pros" value={formData.pros} onChange={handleInputChange} rows={4} />
               <Textarea label="Contras em relação a condução apresentada?" name="contras" value={formData.contras} onChange={handleInputChange} rows={4} />
               <Textarea label="Considerações finais do instrutor" name="consideracoes" value={formData.consideracoes} onChange={handleInputChange} rows={4} />
@@ -508,54 +559,37 @@ const EvaluationForm: React.FC = () => {
         </Card>
       )}
 
-      {(selectedTemplate?.headerType === 'evaluation' || selectedTemplate?.headerType === 'rh') && (
-        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
-            <span className="text-lg font-medium text-gray-600">
-              {selectedTemplate.headerType === 'rh' ? 'Média Geral do Colaborador:' : 'Média Geral do Motorista:'}
-            </span>
-            {renderAverageStatus()}
-          </div>
-          <div className="flex items-center gap-4 w-full md:w-auto">
-            <Button type="button" onClick={resetForm} variant="secondary" className="w-full md:w-auto">
-              <RotateCcw className="h-4 w-4 mr-2" />
+      {/* Barra de ação única (modelos com cabeçalho, só formulário ou legados).
+          No celular fica colada acima da navegação inferior do App; a média ao vivo e os erros ficam sempre visíveis. */}
+      <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] [@media(max-height:32rem)]:static sm:static z-20 mt-4 sm:mt-6 -mx-4 sm:mx-0 px-4 py-3 sm:p-4 bg-white border-t border-gray-200 sm:border-t-0 sm:rounded-lg shadow-[0_-2px_8px_rgba(0,0,0,0.08)] sm:shadow-md">
+        {actionBarError && <ErrorBanner message={actionBarError} className="mb-3" />}
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {hasAverageHeader && (
+            <div className="flex flex-wrap items-center justify-between sm:justify-start gap-x-3 gap-y-1 min-w-0">
+              <span className="text-sm sm:text-lg font-medium text-gray-600">
+                <span className="sm:hidden">Média geral:</span>
+                <span className="hidden sm:inline">
+                  {selectedTemplate?.headerType === 'rh' ? 'Média Geral do Colaborador:' : 'Média Geral do Motorista:'}
+                </span>
+              </span>
+              {renderAverageStatus()}
+            </div>
+          )}
+
+          {/* No celular os dois botões ficam lado a lado (barra baixa); Salvar ocupa o espaço restante */}
+          <div className="flex gap-3 sm:ml-auto">
+            <Button type="button" onClick={resetForm} variant="secondary" className="flex-none">
+              <Icon name="rotate" className="h-4 w-4" />
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSaving} className="w-full md:w-auto">
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              {isSaving ? 'Salvando...' : 'Salvar Avaliação'}
+            <Button type="submit" disabled={isSaving} className="flex-1 sm:flex-none">
+              {isSaving ? <Icon name="loader-2" className="h-4 w-4 animate-spin" /> : <Icon name="device-floppy" className="h-4 w-4" />}
+              {isSaving ? 'Salvando...' : submitLabel}
             </Button>
           </div>
         </div>
-      )}
-
-      {selectedTemplate && !selectedTemplate.headerType && selectedTemplate.includeHeader === false && (
-        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
-          <Button type="button" onClick={resetForm} variant="secondary">
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            {isSaving ? 'Salvando...' : 'Enviar Formulário'}
-          </Button>
-        </div>
-      )}
-
-      {/* Fallback para templates antigos sem configuração definida */}
-      {selectedTemplate && !selectedTemplate.headerType && selectedTemplate.includeHeader !== true && selectedTemplate.includeHeader !== false && (
-        <div className="mt-6 p-6 bg-white rounded-lg shadow-md flex justify-end gap-4">
-          <Button type="button" onClick={resetForm} variant="secondary">
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            {isSaving ? 'Salvando...' : 'Salvar'}
-          </Button>
-        </div>
-      )}
-
+      </div>
     </form>
   );
 };
