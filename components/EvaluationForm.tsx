@@ -1,12 +1,13 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Save, RotateCcw, Loader2, FileText } from 'lucide-react';
+import { Save, RotateCcw, Loader2 } from 'lucide-react';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
+import { gradeEvaluation } from '../utils/gradingUtils';
 import RatingSlider from './RatingSlider';
-import RatingSlider5 from './ui/RatingSlider5';
 import DynamicField from './ui/DynamicField';
+import EvaluationResult from './EvaluationResult';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Input from './ui/Input';
@@ -31,8 +32,24 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'te
     equipeSetor: '',
 });
 
+const isRatingType = (type: string | undefined): boolean => type === 'rating' || type === 'rating-5';
+
+// Campos de nota obrigatórios que ficaram sem resposta (chave = id do critério)
+const getMissingRatingErrors = (
+  template: EvaluationTemplate,
+  scores: Record<string, number>
+): Record<string, string> => {
+  const errors: Record<string, string> = {};
+  template.criteriaConfig?.forEach(criterion => {
+    if (criterion.required && isRatingType(criterion.type) && scores[criterion.id] === undefined) {
+      errors[criterion.id] = 'Selecione uma nota para este campo.';
+    }
+  });
+  return errors;
+};
+
 const EvaluationForm: React.FC = () => {
-  const [formStep, setFormStep] = useState(1); // 1: seleção de modelo, 2: preenchimento
+  const [formStep, setFormStep] = useState(1); // 1: seleção de modelo, 2: preenchimento, 3: resultado
   const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EvaluationTemplate | null>(null);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
@@ -42,8 +59,8 @@ const EvaluationForm: React.FC = () => {
   const [formData, setFormData] = useState(getInitialState());
   const [scores, setScores] = useState<Record<string, number>>({});
   const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
   const [lastSavedEvaluation, setLastSavedEvaluation] = useState<Evaluation | null>(null);
 
   // Filiais ordenadas alfabeticamente
@@ -88,35 +105,25 @@ const EvaluationForm: React.FC = () => {
       setSelectedTemplate(template);
       
       if (template.criteriaConfig) {
-        // Nova estrutura com tipos de campo
-        const initialScores: Record<string, number> = {};
+        // Nova estrutura com tipos de campo. Notas (rating/rating-5) iniciam sem valor:
+        // a ausência da chave em `scores` significa "sem nota".
         const initialFieldValues: Record<string, any> = {};
-        
+
         template.criteriaConfig.forEach(criterion => {
-          if (criterion.type === 'rating') {
-            initialScores[criterion.id] = 5;
-          } else if (criterion.type === 'rating-5') {
-            initialScores[criterion.id] = 3;
-          } else if (criterion.type === 'checkbox') {
-            initialFieldValues[criterion.id] = false;
-          } else {
-            initialFieldValues[criterion.id] = '';
+          if (isRatingType(criterion.type)) {
+            return;
           }
+          initialFieldValues[criterion.id] = criterion.type === 'checkbox' ? false : '';
         });
-        
-        setScores(initialScores);
+
         setFieldValues(initialFieldValues);
       } else {
-        // Compatibilidade com templates antigos
-        const initialScores = template.criteria.reduce((acc, criterion) => {
-          acc[criterion] = 5;
-          return acc;
-        }, {} as Record<string, number>);
-        
-        setScores(initialScores);
+        // Compatibilidade com templates antigos (todos os critérios são notas)
         setFieldValues({});
       }
-      
+
+      setScores({});
+      setErrors({});
       setFormStep(2);
     }
   };
@@ -126,42 +133,49 @@ const EvaluationForm: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleScoreChange = useCallback((criterion: string, value: number) => {
-    setScores(prev => ({ ...prev, [criterion]: value }));
+  const clearError = useCallback((fieldId: string) => {
+    setErrors(prev => {
+      if (!(fieldId in prev)) return prev;
+      const { [fieldId]: _removed, ...rest } = prev;
+      return rest;
+    });
   }, []);
+
+  // `null` = nota desmarcada: remove a chave em vez de gravar um valor
+  const handleScoreChange = useCallback((criterion: string, value: number | null) => {
+    setScores(prev => {
+      if (value === null) {
+        const { [criterion]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [criterion]: value };
+    });
+    clearError(criterion);
+  }, [clearError]);
 
   const handleFieldChange = useCallback((fieldId: string, value: any) => {
     setFieldValues(prev => ({ ...prev, [fieldId]: value }));
   }, []);
 
+  // Média apenas das notas respondidas; sem nenhuma nota respondida não há média.
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
-    
+
     // Se o template não tem cabeçalho, não deve ter averageScore
     if (!selectedTemplate.headerType) return undefined;
-    
-    let ratingFieldsCount: number;
-    if (selectedTemplate.criteriaConfig) {
-      // Contar campos dos tipos 'rating' e 'rating-5'
-      ratingFieldsCount = selectedTemplate.criteriaConfig.filter(
-        c => c.type === 'rating' || c.type === 'rating-5'
-      ).length;
-    } else {
-      // Compatibilidade com templates antigos (todos eram rating)
-      ratingFieldsCount = selectedTemplate.criteria.length;
-    }
-    
-    if (ratingFieldsCount === 0) return 0;
-    
-    const total = Object.values(scores).reduce((sum, score) => sum + score, 0);
-    const average = total / ratingFieldsCount;
-    return isNaN(average) ? 0 : average;
+
+    const answeredScores = Object.values(scores);
+    if (answeredScores.length === 0) return undefined;
+
+    const total = answeredScores.reduce((sum, score) => sum + score, 0);
+    return total / answeredScores.length;
   }, [scores, selectedTemplate]);
 
   const resetForm = () => {
     setFormData(getInitialState());
     setScores({});
     setFieldValues({});
+    setErrors({});
     setSelectedTemplate(null);
     setFormStep(1);
     setLastSavedEvaluation(null);
@@ -170,8 +184,20 @@ const EvaluationForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTemplate) return;
+
+    const missingRatings = getMissingRatingErrors(selectedTemplate, scores);
+    const firstMissingId = Object.keys(missingRatings)[0];
+    if (firstMissingId) {
+      setErrors(missingRatings);
+      document.getElementById(`field-${firstMissingId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
     setIsSaving(true);
-    
+
+    // Correção pelo gabarito: usa as respostas ainda indexadas pelo id do critério
+    const grading = gradeEvaluation(selectedTemplate, fieldValues);
+
     // Converter IDs dos campos em nomes legíveis para salvar no Firebase
     const fieldValuesWithNames: Record<string, any> = {};
     Object.entries(fieldValues).forEach(([fieldId, value]) => {
@@ -201,9 +227,13 @@ const EvaluationForm: React.FC = () => {
       evaluationToSave.equipeSetor = formData.equipeSetor || '';
     }
 
-    // Só adicionar averageScore se o template incluir cabeçalho E houver campos de rating
+    // Só adicionar averageScore se o template incluir cabeçalho E houver notas respondidas
     if (hasHeader && averageScore !== undefined && averageScore !== null) {
       evaluationToSave.averageScore = averageScore;
+    }
+
+    if (grading) {
+      evaluationToSave.grading = grading;
     }
 
     // Propagar a escala do template para uso nos dashboards
@@ -214,19 +244,17 @@ const EvaluationForm: React.FC = () => {
     }
 
     try {
-      await saveEvaluation(evaluationToSave);
-      
-      // Criar objeto de avaliação completo para o PDF
+      const savedId = await saveEvaluation(evaluationToSave);
+
+      // Criar objeto de avaliação completo para a tela de resultado e o PDF
       const completeEvaluation: Evaluation = {
-        id: Date.now().toString(), // ID temporário
-        timestamp: Date.now(),
         ...evaluationToSave,
+        id: savedId,
+        timestamp: Date.now(),
       };
-      
+
       setLastSavedEvaluation(completeEvaluation);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-      resetForm();
+      setFormStep(3);
     } catch (error) {
       console.error("Falha ao salvar avaliação:", error);
       alert("Falha ao salvar a avaliação. Tente novamente.");
@@ -261,9 +289,9 @@ const EvaluationForm: React.FC = () => {
   const renderAverageStatus = () => {
     const score = averageScore;
     
-    // Se não há score (formulário sem cabeçalho), não renderiza nada
+    // Sem notas respondidas não há média para classificar
     if (score === undefined || score === null) {
-      return null;
+      return <span className="text-xl font-medium text-gray-400">—</span>;
     }
     
     let statusText: string;
@@ -299,6 +327,16 @@ const EvaluationForm: React.FC = () => {
 
   if (isLoadingTemplates || isLoadingBranches) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-brand-primary" /><p className="ml-4 text-lg text-gray-600">Carregando dados...</p></div>;
+  }
+
+  if (formStep === 3 && lastSavedEvaluation) {
+    return (
+      <EvaluationResult
+        evaluation={lastSavedEvaluation}
+        onGeneratePDF={handleGeneratePDF}
+        onNewEvaluation={resetForm}
+      />
+    );
   }
 
   if (formStep === 1) {
@@ -421,8 +459,8 @@ const EvaluationForm: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 {selectedTemplate.criteriaConfig ? (
                   selectedTemplate.criteriaConfig.map(criterion => {
-                    const fieldValue = (criterion.type === 'rating' || criterion.type === 'rating-5')
-                      ? (scores[criterion.id] ?? (criterion.type === 'rating-5' ? 3 : 5)) 
+                    const fieldValue = isRatingType(criterion.type)
+                      ? scores[criterion.id]
                       : (fieldValues[criterion.id] ?? (criterion.type === 'checkbox' ? false : ''));
 
                     return (
@@ -430,8 +468,9 @@ const EvaluationForm: React.FC = () => {
                         key={criterion.id}
                         criterion={criterion}
                         value={fieldValue}
+                        error={errors[criterion.id]}
                         onChange={(value) => {
-                          if (criterion.type === 'rating' || criterion.type === 'rating-5') {
+                          if (isRatingType(criterion.type)) {
                             handleScoreChange(criterion.id, value);
                           } else {
                             handleFieldChange(criterion.id, value);
@@ -446,7 +485,7 @@ const EvaluationForm: React.FC = () => {
                     <RatingSlider
                       key={criterion}
                       label={criterion}
-                      value={scores[criterion] ?? 5}
+                      value={scores[criterion]}
                       onChange={(value) => handleScoreChange(criterion, value)}
                     />
                   ))
@@ -517,21 +556,6 @@ const EvaluationForm: React.FC = () => {
         </div>
       )}
 
-      {showSuccess && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white py-3 px-5 rounded-lg shadow-xl animate-bounce">
-          <div className="flex items-center gap-2">
-            <span>Avaliação salva com sucesso!</span>
-            <Button 
-              onClick={handleGeneratePDF} 
-              variant="secondary" 
-              className="!bg-white !text-green-600 hover:!bg-gray-100 !py-1 !px-3 text-sm"
-            >
-              <FileText className="h-4 w-4 mr-1" />
-              Gerar PDF
-            </Button>
-          </div>
-        </div>
-      )}
     </form>
   );
 };

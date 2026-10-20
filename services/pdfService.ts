@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import type { Evaluation } from '../types';
+import type { Evaluation, EvaluationGrading } from '../types';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
 import { getTemplates } from './firebaseService';
 
@@ -141,22 +141,26 @@ export class PDFService {
 
     yPosition += 10;
 
-    // Pontuações por critério
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('PONTUAÇÕES POR CRITÉRIO', margin, yPosition);
-    yPosition += 10;
+    // Pontuações por critério (formulários sem notas, ex.: testes com gabarito, não têm esta seção)
+    const hasScores = Object.keys(evaluation.scores || {}).length > 0;
 
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
+    if (hasScores) {
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('PONTUAÇÕES POR CRITÉRIO', margin, yPosition);
+      yPosition += 10;
 
-    // Cabeçalho da tabela
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPosition - 5, contentWidth, 8, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Critério', margin + 2, yPosition);
-    pdf.text('Pontuação', margin + contentWidth - 20, yPosition);
-    yPosition += 8;
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+
+      // Cabeçalho da tabela
+      pdf.setFillColor(240, 240, 240);
+      pdf.rect(margin, yPosition - 5, contentWidth, 8, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Critério', margin + 2, yPosition);
+      pdf.text('Pontuação', margin + contentWidth - 20, yPosition);
+      yPosition += 8;
+    }
 
     // Dados da tabela
     pdf.setFont('helvetica', 'normal');
@@ -241,15 +245,23 @@ export class PDFService {
       yPosition += 6;
     }
 
-    yPosition += 10;
+    if (hasScores) {
+      yPosition += 10;
+    }
 
-    // Média geral com status
-  const avg = evaluation.averageScore ?? 0;
-  const status = getEvaluationStatus(avg, evaluation.ratingScale);
-  pdf.setFontSize(14);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`MÉDIA GERAL: ${avg.toFixed(2)} (${status.label})`, margin, yPosition);
-    yPosition += 15;
+    // Média geral com status (só quando há média; formulários sem notas não têm)
+    if (evaluation.averageScore !== undefined) {
+      const avg = evaluation.averageScore;
+      const status = getEvaluationStatus(avg, evaluation.ratingScale);
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`MÉDIA GERAL: ${avg.toFixed(2)} (${status.label})`, margin, yPosition);
+      yPosition += 15;
+    }
+
+    if (evaluation.grading) {
+      yPosition = this.drawGradingSection(pdf, evaluation.grading, margin, contentWidth, pageHeight, yPosition);
+    }
 
     // Observações
     if (evaluation.pros || evaluation.contras || evaluation.consideracoes) {
@@ -506,6 +518,65 @@ export class PDFService {
     // Salvar PDF
     const fileName = `analise_${driverName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
     pdf.save(fileName);
+  }
+
+  // Seção "RESULTADO DO TESTE": acertos e, por pergunta, resposta dada × esperada (somente texto)
+  private static drawGradingSection(
+    pdf: jsPDF,
+    grading: EvaluationGrading,
+    margin: number,
+    contentWidth: number,
+    pageHeight: number,
+    startY: number
+  ): number {
+    let yPosition = startY;
+    const bottomLimit = pageHeight - 30;
+
+    const ensureSpace = (needed: number) => {
+      if (yPosition + needed > bottomLimit) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+    };
+
+    ensureSpace(30);
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('RESULTADO DO TESTE', margin, yPosition);
+    yPosition += 8;
+    pdf.setFontSize(12);
+    pdf.text(`${grading.correct} de ${grading.total} acertos (${grading.percentage}%)`, margin, yPosition);
+    yPosition += 10;
+
+    pdf.setFontSize(10);
+    grading.items.forEach(item => {
+      const nameLines: string[] = pdf.splitTextToSize(item.name, contentWidth - 30);
+      const answerLine = `Resposta: ${item.given || 'Sem resposta'}` +
+        (item.isCorrect ? '' : `   |   Esperado: ${item.expected}`);
+      const answerLines: string[] = pdf.splitTextToSize(answerLine, contentWidth - 5);
+
+      ensureSpace((nameLines.length + answerLines.length) * 5 + 4);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(nameLines, margin, yPosition);
+      if (item.isCorrect) {
+        pdf.setTextColor(22, 163, 74);
+      } else {
+        pdf.setTextColor(220, 38, 38);
+      }
+      pdf.text(item.isCorrect ? 'CORRETA' : 'ERRADA', margin + contentWidth, yPosition, { align: 'right' });
+      yPosition += nameLines.length * 5;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(60, 60, 60);
+      pdf.text(answerLines, margin + 3, yPosition);
+      yPosition += answerLines.length * 5 + 3;
+    });
+
+    pdf.setTextColor(0, 0, 0);
+    return yPosition + 10;
   }
 
   private static splitTextToFit(text: string, maxWidth: number): string[] {

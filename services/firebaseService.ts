@@ -30,10 +30,10 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
         name: data.name,
         criteria: data.criteria || [], // Compatibilidade com dados antigos
         criteriaConfig: data.criteriaConfig || undefined, // Nova estrutura
-        includeHeader: data.includeHeader,
-        headerType: data.headerType,
-        includeFinalConsiderations: data.includeFinalConsiderations,
-        isFormOnly: data.isFormOnly,
+        includeHeader: data.includeHeader ?? undefined,
+        headerType: data.headerType ?? undefined,
+        includeFinalConsiderations: data.includeFinalConsiderations ?? undefined,
+        isFormOnly: data.isFormOnly ?? undefined,
       });
     });
     
@@ -49,10 +49,11 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
     const dataToSave: any = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
-      includeHeader: templateData.includeHeader,
-      headerType: templateData.headerType,
-      includeFinalConsiderations: templateData.includeFinalConsiderations,
-      isFormOnly: templateData.isFormOnly,
+      // Firestore rejeita `undefined`; null é normalizado de volta para undefined em getTemplates
+      includeHeader: templateData.includeHeader ?? null,
+      headerType: templateData.headerType ?? null,
+      includeFinalConsiderations: templateData.includeFinalConsiderations ?? null,
+      isFormOnly: templateData.isFormOnly ?? null,
       createdAt: Timestamp.now(),
     };
     
@@ -86,10 +87,11 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
     const dataToUpdate: any = {
       name: templateData.name,
       criteria: templateData.criteria || [], // Compatibilidade
-      includeHeader: templateData.includeHeader,
-      headerType: templateData.headerType,
-      includeFinalConsiderations: templateData.includeFinalConsiderations,
-      isFormOnly: templateData.isFormOnly,
+      // Firestore rejeita `undefined`; null é normalizado de volta para undefined em getTemplates
+      includeHeader: templateData.includeHeader ?? null,
+      headerType: templateData.headerType ?? null,
+      includeFinalConsiderations: templateData.includeFinalConsiderations ?? null,
+      isFormOnly: templateData.isFormOnly ?? null,
       updatedAt: Timestamp.now(),
     };
     
@@ -126,7 +128,7 @@ export const deleteTemplate = async (templateId: string): Promise<void> => {
 };
 
 // Serviços para Avaliações
-export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'timestamp'>): Promise<void> => {
+export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'timestamp'>): Promise<string> => {
   try {
     console.log('Tentando salvar avaliação:', evaluationData);
     
@@ -140,6 +142,7 @@ export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'ti
     
     const docRef = await addDoc(collection(db, 'evaluations'), dataToSave);
     console.log('Avaliação salva com sucesso, ID:', docRef.id);
+    return docRef.id;
   } catch (error) {
     console.error('Erro ao salvar avaliação:', error);
     console.error('Detalhes do erro:', error);
@@ -171,6 +174,12 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         scores: data.scores || {},
         fieldValues: data.fieldValues || {},
         averageScore: data.averageScore,
+        ratingScale: data.ratingScale,
+        nomeColaborador: data.nomeColaborador,
+        funcao: data.funcao,
+        turnoPrincipal: data.turnoPrincipal,
+        equipeSetor: data.equipeSetor,
+        grading: data.grading,
         pros: data.pros,
         contras: data.contras,
         consideracoes: data.consideracoes,

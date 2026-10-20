@@ -24,6 +24,17 @@ service firebase.storage {
       );
     }
 
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        (
+          firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+          userProfile().role == 'admin' &&
+          userProfile().isActive != false
+        )
+      );
+    }
+
     function isPublishedForm(formId) {
       return firestore.exists(/databases/(default)/documents/mn10Forms/$(formId)) &&
         firestore.get(/databases/(default)/documents/mn10Forms/$(formId)).data.status == 'published';
@@ -42,6 +53,18 @@ service firebase.storage {
     match /mn10/uploads/{formId}/{responseId}/{questionId}/{fileName} {
       allow create: if isAllowedUpload() && isPublishedForm(formId);
       allow read, delete: if hasMn10Access();
+      allow update: if false;
+    }
+
+    // Imagens exibidas junto às perguntas dos modelos de avaliação (somente admin envia/remove)
+    match /templates/images/{folderId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() &&
+        request.resource != null &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType != null &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if isAdmin();
       allow update: if false;
     }
 

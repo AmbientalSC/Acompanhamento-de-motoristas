@@ -3,6 +3,7 @@ import { Loader2, AlertTriangle, FileText, Calendar, User, Building, Search, Tra
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import Card from './ui/Card';
+import GradingDetails from './GradingDetails';
 import Select from './ui/Select';
 import Input from './ui/Input';
 
@@ -238,6 +239,11 @@ const FormsViewer: React.FC = () => {
                         <Calendar className="h-4 w-4" />
                         {formatDate(form.data)}
                       </span>
+                      {form.grading && (
+                        <span className="bg-brand-light text-brand-primary font-medium px-2 py-0.5 rounded-full text-xs">
+                          {form.grading.correct}/{form.grading.total} acertos ({form.grading.percentage}%)
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -273,6 +279,12 @@ const FormsViewer: React.FC = () => {
                 {/* Conteúdo expandido - campos do formulário */}
                 {isExpanded && (
                   <>
+                    {form.grading && (
+                      <div className="mt-4 border-t pt-4">
+                        <GradingDetails grading={form.grading} />
+                      </div>
+                    )}
+
                     {/* Exibir campos do formulário */}
                     {form.fieldValues && Object.keys(form.fieldValues).length > 0 && (
                       <div className="mt-4 border-t pt-4">

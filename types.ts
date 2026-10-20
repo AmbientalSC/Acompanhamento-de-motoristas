@@ -1,6 +1,6 @@
 
 // Tipos de campo disponíveis
-export type FieldType = 'rating' | 'rating-5' | 'text' | 'radio' | 'date' | 'checkbox';
+export type FieldType = 'rating' | 'rating-5' | 'text' | 'number' | 'radio' | 'date' | 'checkbox';
 
 // Opção para campos do tipo rádio
 export interface RadioOption {
@@ -14,9 +14,29 @@ export interface EvaluationCriterion {
   name: string; // Nome/label do campo
   required: boolean; // Se é obrigatório
   type: FieldType; // Tipo do campo
-  options?: RadioOption[]; // Opções para campos de rádio
+  options?: RadioOption[]; // Opções para campos de rádio (ou legenda da lista suspensa em campos numéricos)
   placeholder?: string; // Placeholder para campos de texto
   description?: string; // Descrição/ajuda do campo
+  imageUrl?: string; // URL da imagem exibida junto à pergunta ('' = sem imagem)
+  imagePath?: string; // Caminho da imagem no Storage (usado para apagar)
+  correctAnswer?: string; // Resposta correta (gabarito) para campos text, number e radio ('' = sem gabarito)
+}
+
+// Item corrigido de uma avaliação com gabarito
+export interface GradingItem {
+  criterionId: string;
+  name: string;
+  given: string; // Resposta dada (texto legível)
+  expected: string; // Resposta esperada (texto legível)
+  isCorrect: boolean;
+}
+
+// Resultado da correção, gravado junto da avaliação (snapshot do gabarito)
+export interface EvaluationGrading {
+  correct: number;
+  total: number;
+  percentage: number; // 0-100
+  items: GradingItem[];
 }
 
 // Tipos de usuário no sistema
@@ -70,6 +90,7 @@ export interface Evaluation {
   funcao?: string; // Função/cargo (cabeçalho RH)
   turnoPrincipal?: string; // Turno principal (cabeçalho RH)
   equipeSetor?: string; // Equipe/setor (cabeçalho RH)
+  grading?: EvaluationGrading; // Resultado da correção (apenas modelos com gabarito)
   pros: string;
   contras: string;
   consideracoes: string;

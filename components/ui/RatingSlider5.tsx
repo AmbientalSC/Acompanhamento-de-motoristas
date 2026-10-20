@@ -2,11 +2,12 @@ import React from 'react';
 
 interface RatingSlider5Props {
   label: string;
-  value: number;
-  onChange: (value: number) => void;
+  value?: number | null;
+  onChange: (value: number | null) => void;
+  required?: boolean;
 }
 
-const RatingSlider5: React.FC<RatingSlider5Props> = ({ label, value, onChange }) => {
+const RatingSlider5: React.FC<RatingSlider5Props> = ({ label, value, onChange, required }) => {
   const numbers = Array.from({ length: 5 }, (_, i) => i + 1);
 
   const getButtonClasses = (num: number, isSelected: boolean) => {
@@ -31,21 +32,24 @@ const RatingSlider5: React.FC<RatingSlider5Props> = ({ label, value, onChange })
     <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4">
       <label className="text-sm font-medium text-gray-700 w-full sm:w-2/5 self-start sm:self-center">
         {label}
+        {required && <span className="text-red-600 ml-1" aria-hidden="true">*</span>}
       </label>
-      <div className="flex flex-wrap items-center justify-start gap-1.5 w-full sm:w-3/5" role="radiogroup" aria-label={label}>
-        {numbers.map((num) => (
-          <button
-            key={num}
-            type="button"
-            role="radio"
-            aria-checked={value === num}
-            onClick={() => onChange(num)}
-            className={getButtonClasses(num, value === num)}
-            aria-label={`Nota ${num}`}
-          >
-            {num}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-start gap-1.5 w-full sm:w-3/5" role="group" aria-label={label}>
+        {numbers.map((num) => {
+          const isSelected = value === num;
+          return (
+            <button
+              key={num}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => onChange(isSelected ? null : num)}
+              className={getButtonClasses(num, isSelected)}
+              aria-label={`Nota ${num}`}
+            >
+              {num}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

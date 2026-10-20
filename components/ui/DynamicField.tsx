@@ -6,6 +6,7 @@ import DateInput from './DateInput';
 import Checkbox from './Checkbox';
 import RatingSlider from '../RatingSlider';
 import RatingSlider5 from './RatingSlider5';
+import QuestionImage from './QuestionImage';
 
 interface DynamicFieldProps {
   criterion: EvaluationCriterion;
@@ -20,7 +21,8 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
   onChange,
   error
 }) => {
-  const { type, name, required, options, placeholder, description } = criterion;
+  const { type, name, required, options, placeholder, description, imageUrl } = criterion;
+  const hasNumberLegend = type === 'number' && (options ?? []).some(option => option.label.trim() || option.value.trim());
 
   const renderField = () => {
     switch (type) {
@@ -32,12 +34,10 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
             )}
             <RatingSlider
               label={name}
-              value={value || 0}
+              value={value ?? null}
               onChange={onChange}
+              required={required}
             />
-            {required && value === 0 && (
-              <p className="text-sm text-red-600">Este campo é obrigatório</p>
-            )}
           </div>
         );
 
@@ -49,8 +49,9 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
             )}
             <RatingSlider5
               label={name}
-              value={value || 1}
+              value={value ?? null}
               onChange={onChange}
+              required={required}
             />
           </div>
         );
@@ -64,6 +65,26 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
               onChange={(e) => onChange(e.target.value)}
               required={required}
               placeholder={placeholder}
+            />
+            {description && (
+              <p className="text-sm text-gray-500">{description}</p>
+            )}
+          </div>
+        );
+
+      case 'number':
+        return (
+          <div className="space-y-2">
+            <Input
+              label={name}
+              name={criterion.id}
+              type="number"
+              inputMode="decimal"
+              step="any"
+              value={value ?? ''}
+              onChange={(e) => onChange(e.target.value)}
+              required={required}
+              placeholder={placeholder || 'Digite o número'}
             />
             {description && (
               <p className="text-sm text-gray-500">{description}</p>
@@ -117,7 +138,14 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
   };
 
   return (
-    <div className="space-y-1">
+    <div id={`field-${criterion.id}`} className="space-y-2">
+      {(imageUrl || hasNumberLegend) && (
+        <QuestionImage
+          src={imageUrl || undefined}
+          alt={name}
+          options={type === 'number' ? options : undefined}
+        />
+      )}
       {renderField()}
       {error && (
         <p className="text-sm text-red-600">{error}</p>

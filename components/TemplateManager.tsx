@@ -1,16 +1,58 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PlusCircle, Trash2, Save, Loader2, FileText, Edit, XCircle, Building, Settings, GripVertical, ChevronUp, ChevronDown, Users, Download } from 'lucide-react';
-import type { EvaluationTemplate, EvaluationCriterion, User, FieldType } from '../types';
+import { PlusCircle, Trash2, Save, Loader2, FileText, Edit, XCircle, Building, Settings, Users, Download } from 'lucide-react';
+import type { EvaluationTemplate, EvaluationCriterion, User } from '../types';
 import { getTemplates, saveTemplate, updateTemplate, deleteTemplate, getBranches, saveBranch, deleteBranch, getUsers, saveUser, updateUser, deleteUser } from '../services/firebaseService';
+import { deleteTemplateImage, uploadTemplateImage, validateTemplateImage } from '../services/templateImageService';
+import { supportsAnswerKey } from '../utils/gradingUtils';
 import { useAuth } from '../contexts/AuthContext';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
+import CriterionEditor from './templates/CriterionEditor';
 import { exampleTemplates } from '../data/exampleTemplates';
 
 type SubTab = 'models' | 'branches' | 'users' | 'forms';
+
+// Imagem escolhida no editor e ainda não enviada ao Storage (chave = id do critério)
+interface PendingImage {
+  file: File;
+  previewUrl: string;
+}
+
+const isNumericText = (value: string): boolean => {
+  const normalized = value.trim().replace(',', '.');
+  return normalized.length > 0 && Number.isFinite(Number(normalized));
+};
+
+// Retorna a primeira mensagem de erro encontrada nos critérios, ou null se estiverem válidos
+const validateCriteria = (criteria: EvaluationCriterion[]): string | null => {
+  for (const criterion of criteria) {
+    const label = `"${criterion.name.trim()}"`;
+
+    if (criterion.type === 'number') {
+      const invalidOption = (criterion.options || []).find(
+        option => (option.label.trim() || option.value.trim()) && !isNumericText(option.value)
+      );
+      if (invalidOption) {
+        return `Campo ${label}: informe um número em todas as opções da lista suspensa.`;
+      }
+    }
+
+    const correctAnswer = (criterion.correctAnswer || '').trim();
+    if (!correctAnswer || !supportsAnswerKey(criterion.type)) {
+      continue;
+    }
+    if (criterion.type === 'number' && !isNumericText(correctAnswer)) {
+      return `Campo ${label}: a resposta correta deve ser um número.`;
+    }
+    if (criterion.type === 'radio' && !(criterion.options || []).some(option => option.value.trim() === correctAnswer)) {
+      return `Campo ${label}: a resposta correta não corresponde a nenhuma opção.`;
+    }
+  }
+  return null;
+};
 
 const TemplateManager: React.FC = () => {
   const { canManageSystem } = useAuth();
@@ -30,6 +72,9 @@ const TemplateManager: React.FC = () => {
   }]);
   const [headerType, setHeaderType] = useState<'evaluation' | 'rh' | undefined>('evaluation');
   const [includeFinalConsiderations, setIncludeFinalConsiderations] = useState(true);
+  const [pendingImages, setPendingImages] = useState<Record<string, PendingImage>>({});
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
   const formRef = useRef<HTMLDivElement>(null);
 
   // Estados para filiais
@@ -67,6 +112,13 @@ const TemplateManager: React.FC = () => {
       setUserCanAccessMN10(true);
     }
   }, [userRole]);
+
+  // Libera as URLs de pré-visualização ao desmontar
+  useEffect(() => {
+    return () => {
+      Object.values(pendingImagesRef.current).forEach(pending => URL.revokeObjectURL(pending.previewUrl));
+    };
+  }, []);
   
   const loadTemplates = async () => {
     setIsLoading(true);
@@ -101,17 +153,21 @@ const TemplateManager: React.FC = () => {
   const handleCriterionChange = (index: number, field: keyof EvaluationCriterion, value: any) => {
     const updatedCriteria = [...criteriaConfig];
     updatedCriteria[index] = { ...updatedCriteria[index], [field]: value };
-    
-    // Se mudou para tipo radio e não tem opções, inicializar
-    if (field === 'type' && value === 'radio' && !updatedCriteria[index].options) {
-      updatedCriteria[index].options = [{ label: '', value: '' }];
+
+    if (field === 'type') {
+      // Radio e número (legenda da lista suspensa) usam opções; os demais tipos não
+      if (value === 'radio' || value === 'number') {
+        if (!updatedCriteria[index].options) {
+          updatedCriteria[index].options = [{ label: '', value: '' }];
+        }
+      } else {
+        updatedCriteria[index].options = undefined;
+      }
+
+      // O gabarito depende do tipo: ao trocar, a resposta correta anterior deixa de valer
+      updatedCriteria[index].correctAnswer = '';
     }
-    
-    // Se mudou para outro tipo que não radio, limpar opções
-    if (field === 'type' && value !== 'radio') {
-      updatedCriteria[index].options = undefined;
-    }
-    
+
     setCriteriaConfig(updatedCriteria);
   };
 
@@ -126,38 +182,95 @@ const TemplateManager: React.FC = () => {
 
   const removeCriterion = (index: number) => {
     if (criteriaConfig.length > 1) {
+      discardPendingImage(criteriaConfig[index].id);
       const updatedCriteria = criteriaConfig.filter((_, i) => i !== index);
       setCriteriaConfig(updatedCriteria);
     }
   };
 
+  // Opções são atualizadas sem mutar o array original (compartilhado com a lista de modelos)
+  const updateCriterionOptions = (
+    criterionIndex: number,
+    update: (options: NonNullable<EvaluationCriterion['options']>) => NonNullable<EvaluationCriterion['options']>,
+    correctAnswer?: string
+  ) => {
+    setCriteriaConfig(prev => prev.map((criterion, i) => {
+      if (i !== criterionIndex) return criterion;
+      const options = update(criterion.options || []);
+      return correctAnswer === undefined ? { ...criterion, options } : { ...criterion, options, correctAnswer };
+    }));
+  };
+
   const addRadioOption = (criterionIndex: number) => {
-    const updatedCriteria = [...criteriaConfig];
-    if (!updatedCriteria[criterionIndex].options) {
-      updatedCriteria[criterionIndex].options = [];
-    }
-    updatedCriteria[criterionIndex].options!.push({ label: '', value: '' });
-    setCriteriaConfig(updatedCriteria);
+    updateCriterionOptions(criterionIndex, options => [...options, { label: '', value: '' }]);
   };
 
   const removeRadioOption = (criterionIndex: number, optionIndex: number) => {
-    const updatedCriteria = [...criteriaConfig];
-    if (updatedCriteria[criterionIndex].options && updatedCriteria[criterionIndex].options!.length > 1) {
-      updatedCriteria[criterionIndex].options!.splice(optionIndex, 1);
-      setCriteriaConfig(updatedCriteria);
-    }
+    const criterion = criteriaConfig[criterionIndex];
+    if (!criterion.options || criterion.options.length <= 1) return;
+
+    // Se a opção removida era a resposta correta, limpa o gabarito
+    const removed = criterion.options[optionIndex];
+    const clearedAnswer = criterion.type === 'radio' && removed && removed.value === criterion.correctAnswer ? '' : undefined;
+    updateCriterionOptions(criterionIndex, options => options.filter((_, i) => i !== optionIndex), clearedAnswer);
   };
 
   const handleRadioOptionChange = (criterionIndex: number, optionIndex: number, field: 'label' | 'value', value: string) => {
-    const updatedCriteria = [...criteriaConfig];
-    if (!updatedCriteria[criterionIndex].options) {
-      updatedCriteria[criterionIndex].options = [];
+    const criterion = criteriaConfig[criterionIndex];
+
+    // Se o valor da opção marcada como correta mudou, o gabarito acompanha
+    const previous = criterion.options?.[optionIndex];
+    const hasAnswerKey = Boolean(criterion.correctAnswer);
+    const followedAnswer =
+      field === 'value' && criterion.type === 'radio' && hasAnswerKey && previous && previous.value === criterion.correctAnswer
+        ? value
+        : undefined;
+
+    updateCriterionOptions(
+      criterionIndex,
+      options => options.map((option, i) => (i === optionIndex ? { ...option, [field]: value } : option)),
+      followedAnswer
+    );
+  };
+
+  // Imagens escolhidas ficam em memória e só vão ao Storage ao salvar o modelo (evita arquivos órfãos)
+  const discardPendingImage = (criterionId: string) => {
+    const pending = pendingImagesRef.current[criterionId];
+    if (!pending) return;
+    URL.revokeObjectURL(pending.previewUrl);
+    setPendingImages(prev => {
+      const { [criterionId]: _removed, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const clearPendingImages = () => {
+    Object.values(pendingImagesRef.current).forEach(pending => URL.revokeObjectURL(pending.previewUrl));
+    setPendingImages({});
+  };
+
+  const handleImageSelect = (index: number, file: File) => {
+    const validationError = validateTemplateImage(file);
+    if (validationError) {
+      alert(validationError);
+      return;
     }
-    updatedCriteria[criterionIndex].options![optionIndex][field] = value;
-    setCriteriaConfig(updatedCriteria);
+
+    const criterionId = criteriaConfig[index].id;
+    discardPendingImage(criterionId);
+    setPendingImages(prev => ({ ...prev, [criterionId]: { file, previewUrl: URL.createObjectURL(file) } }));
+  };
+
+  // Remove a imagem escolhida e a já salva; o arquivo antigo sai do Storage quando o modelo é salvo
+  const handleImageRemove = (index: number) => {
+    discardPendingImage(criteriaConfig[index].id);
+    setCriteriaConfig(prev => prev.map((criterion, i) => (
+      i === index ? { ...criterion, imageUrl: '', imagePath: '' } : criterion
+    )));
   };
 
   const resetForm = () => {
+    clearPendingImages();
     setEditingTemplateId(null);
     setTemplateName('');
     setCriteriaConfig([{ 
@@ -171,6 +284,7 @@ const TemplateManager: React.FC = () => {
   };
 
   const handleEdit = (template: EvaluationTemplate) => {
+    clearPendingImages();
     // Definir o estado de edição primeiro
     setEditingTemplateId(template.id);
     setTemplateName(template.name);
@@ -238,8 +352,13 @@ const TemplateManager: React.FC = () => {
   const handleDelete = async (templateId: string) => {
     if (window.confirm('Tem certeza que deseja excluir este modelo? Esta ação não pode ser desfeita.')) {
         try {
+            const imagePaths = (templates.find(t => t.id === templateId)?.criteriaConfig || [])
+              .map(criterion => criterion.imagePath)
+              .filter((path): path is string => Boolean(path));
+
             await deleteTemplate(templateId);
             setTemplates(prev => prev.filter(t => t.id !== templateId));
+            await Promise.all(imagePaths.map(deleteTemplateImage));
         } catch (error) {
             console.error("Falha ao excluir modelo:", error);
             alert((error as Error).message || "Falha ao excluir o modelo. Tente novamente.");
@@ -254,27 +373,64 @@ const TemplateManager: React.FC = () => {
       return;
     }
 
+    const criteriaError = validateCriteria(criteriaConfig);
+    if (criteriaError) {
+      alert(criteriaError);
+      return;
+    }
+
     setIsSaving(true);
     const hasHeader = headerType !== undefined;
-    const templateData = {
-      name: templateName.trim(),
-      criteria: criteriaConfig.map(c => c.name.trim()).filter(Boolean), // Compatibilidade
-      criteriaConfig: criteriaConfig.map(c => ({
-        id: c.id || generateId(),
-        name: c.name.trim(),
-        required: c.required,
-        type: c.type || 'rating',
-        options: c.options || [],
-        placeholder: c.placeholder || '',
-        description: c.description || ''
-      })).filter(c => c.name),
-      includeHeader: hasHeader,
-      headerType,
-      includeFinalConsiderations,
-      isFormOnly: !hasHeader,
-    };
-    
+    const uploadedPaths: string[] = [];
+
     try {
+      // Envia as imagens escolhidas e grava a URL/caminho no critério correspondente
+      // allSettled: se um upload falhar, os demais terminam antes do rollback (sem arquivos órfãos)
+      const uploadResults = await Promise.allSettled(criteriaConfig.map(async criterion => {
+        const pending = pendingImages[criterion.id];
+        if (!pending) return criterion;
+
+        const uploaded = await uploadTemplateImage(pending.file);
+        uploadedPaths.push(uploaded.path);
+        return { ...criterion, imageUrl: uploaded.url, imagePath: uploaded.path };
+      }));
+
+      const failedUpload = uploadResults.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failedUpload) {
+        throw failedUpload.reason;
+      }
+      const criteriaWithImages = uploadResults.map(result => (result as PromiseFulfilledResult<EvaluationCriterion>).value);
+
+      const templateData = {
+        name: templateName.trim(),
+        criteria: criteriaWithImages.map(c => c.name.trim()).filter(Boolean), // Compatibilidade
+        criteriaConfig: criteriaWithImages.map(c => {
+          const type = c.type || 'rating';
+          return {
+            id: c.id || generateId(),
+            name: c.name.trim(),
+            required: c.required,
+            type,
+            options: type === 'number'
+              ? (c.options || []).filter(option => option.label.trim() || option.value.trim())
+              : (c.options || []),
+            placeholder: c.placeholder || '',
+            description: c.description || '',
+            imageUrl: c.imageUrl || '',
+            imagePath: c.imagePath || '',
+            correctAnswer: supportsAnswerKey(type) ? (c.correctAnswer || '').trim() : '',
+          };
+        }).filter(c => c.name),
+        includeHeader: hasHeader,
+        headerType,
+        includeFinalConsiderations,
+        isFormOnly: !hasHeader,
+      };
+
+      const previousImagePaths = (templates.find(t => t.id === editingTemplateId)?.criteriaConfig || [])
+        .map(criterion => criterion.imagePath)
+        .filter((path): path is string => Boolean(path));
+
       if (editingTemplateId) {
         const updated = await updateTemplate(editingTemplateId, templateData);
         setTemplates(prev => prev.map(t => t.id === editingTemplateId ? updated : t));
@@ -282,10 +438,19 @@ const TemplateManager: React.FC = () => {
         const saved = await saveTemplate(templateData);
         setTemplates(prev => [...prev, saved]);
       }
+
+      // Modelo salvo: remove do Storage as imagens que deixaram de ser usadas (trocadas ou removidas)
+      const savedImagePaths = new Set(templateData.criteriaConfig.map(c => c.imagePath).filter(Boolean));
+      await Promise.all(
+        previousImagePaths.filter(path => !savedImagePaths.has(path)).map(deleteTemplateImage)
+      );
+
       resetForm();
     } catch (error) {
       console.error("Falha ao salvar modelo:", error);
-      alert("Falha ao salvar o modelo. Tente novamente.");
+      // Desfaz os uploads desta tentativa para não deixar arquivos órfãos
+      await Promise.all(uploadedPaths.map(deleteTemplateImage));
+      alert(error instanceof Error && error.message ? error.message : "Falha ao salvar o modelo. Tente novamente.");
     } finally {
       setIsSaving(false);
     }
@@ -593,147 +758,22 @@ const TemplateManager: React.FC = () => {
                 <p className="text-sm text-gray-600 mb-3">Configure os campos que aparecerão no formulário de avaliação</p>
                 <div className="space-y-4">
                   {criteriaConfig.map((criterion, index) => (
-                    <div key={criterion.id || index} className="p-4 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start gap-3 mb-4">
-                        <div className="flex items-center justify-center w-8 h-8 text-gray-400 mt-1">
-                          <GripVertical className="h-5 w-5" />
-                        </div>
-                        <div className="flex-grow space-y-4">
-                          {/* Nome do Campo */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Input
-                              label="Nome do Campo"
-                              value={criterion.name}
-                              onChange={(e) => handleCriterionChange(index, 'name', e.target.value)}
-                              placeholder="Ex: Estado do veículo"
-                              required
-                            />
-                            <Select
-                              label="Tipo do Campo"
-                              value={criterion.type || 'rating'}
-                              onChange={(e) => handleCriterionChange(index, 'type', e.target.value as FieldType)}
-                              required
-                            >
-                              <option value="rating">Avaliação (1-10)</option>
-                              <option value="rating-5">Avaliação (1-5)</option>
-                              <option value="text">Texto</option>
-                              <option value="radio">Múltipla Escolha</option>
-                              <option value="date">Data</option>
-                              <option value="checkbox">Checkbox</option>
-                            </Select>
-                          </div>
-
-                          {/* Configurações específicas por tipo */}
-                          {(criterion.type === 'text' || criterion.type === 'date') && (
-                            <Input
-                              label="Placeholder"
-                              value={criterion.placeholder || ''}
-                              onChange={(e) => handleCriterionChange(index, 'placeholder', e.target.value)}
-                              placeholder="Texto de exemplo para o usuário"
-                            />
-                          )}
-
-                          {criterion.type === 'radio' && (
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Opções de Múltipla Escolha</h4>
-                              <div className="space-y-2">
-                                {(criterion.options || [{ label: '', value: '' }]).map((option, optionIndex) => (
-                                  <div key={optionIndex} className="flex gap-2">
-                                    <Input
-                                      label={`Opção ${optionIndex + 1} - Texto`}
-                                      value={option.label}
-                                      onChange={(e) => handleRadioOptionChange(index, optionIndex, 'label', e.target.value)}
-                                      placeholder="Ex: Excelente"
-                                      className="flex-1"
-                                    />
-                                    <Input
-                                      label={`Opção ${optionIndex + 1} - Valor`}
-                                      value={option.value}
-                                      onChange={(e) => handleRadioOptionChange(index, optionIndex, 'value', e.target.value)}
-                                      placeholder="Ex: excelente"
-                                      className="flex-1"
-                                    />
-                                    <div className="flex items-end">
-                                      <Button
-                                        type="button"
-                                        onClick={() => removeRadioOption(index, optionIndex)}
-                                        variant="secondary"
-                                        className="!py-2 !px-3 !bg-red-100 !text-red-700 hover:!bg-red-200"
-                                        disabled={(criterion.options?.length || 0) <= 1}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))}
-                                <Button
-                                  type="button"
-                                  onClick={() => addRadioOption(index)}
-                                  variant="secondary"
-                                  className="!py-1 !px-3 text-sm"
-                                >
-                                  <PlusCircle className="h-4 w-4 mr-1" />
-                                  Adicionar Opção
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Descrição/Ajuda */}
-                          <Input
-                            label="Descrição (opcional)"
-                            value={criterion.description || ''}
-                            onChange={(e) => handleCriterionChange(index, 'description', e.target.value)}
-                            placeholder="Texto de ajuda para orientar o avaliador"
-                          />
-
-                          {/* Campo obrigatório */}
-                          <div className="flex items-center">
-                            <input
-                              id={`required-${index}`}
-                              type="checkbox"
-                              checked={criterion.required}
-                              onChange={(e) => handleCriterionChange(index, 'required', e.target.checked)}
-                              className="h-4 w-4 text-brand-primary focus:ring-brand-accent border-gray-300 rounded"
-                            />
-                            <label htmlFor={`required-${index}`} className="ml-2 block text-sm text-gray-700">
-                              Campo obrigatório
-                            </label>
-                          </div>
-                        </div>
-                        
-                        {/* Botões de ação */}
-                        <div className="flex flex-col items-center gap-1">
-                          <button 
-                            type="button" 
-                            onClick={() => moveCriterionUp(index)}
-                            disabled={index === 0}
-                            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Mover para cima"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => moveCriterionDown(index)}
-                            disabled={index === criteriaConfig.length - 1}
-                            className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Mover para baixo"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => removeCriterion(index)}
-                            className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Remover campo"
-                            disabled={criteriaConfig.length <= 1}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                    <CriterionEditor
+                      key={criterion.id || index}
+                      criterion={criterion}
+                      index={index}
+                      total={criteriaConfig.length}
+                      pendingImagePreview={pendingImages[criterion.id]?.previewUrl}
+                      onChange={handleCriterionChange}
+                      onOptionAdd={addRadioOption}
+                      onOptionRemove={removeRadioOption}
+                      onOptionChange={handleRadioOptionChange}
+                      onImageSelect={handleImageSelect}
+                      onImageRemove={handleImageRemove}
+                      onMoveUp={moveCriterionUp}
+                      onMoveDown={moveCriterionDown}
+                      onRemove={removeCriterion}
+                    />
                   ))}
                 </div>
                 <div className="flex gap-3 mt-4">
@@ -1204,6 +1244,7 @@ const TemplateManager: React.FC = () => {
                                     {criterion.type === 'rating' ? 'AVAL' :
                                      criterion.type === 'rating-5' ? 'AVAL 1-5' :
                                      criterion.type === 'text' ? 'TEXTO' :
+                                     criterion.type === 'number' ? 'NÚMERO' :
                                      criterion.type === 'radio' ? 'OPÇÃO' :
                                      criterion.type === 'date' ? 'DATA' :
                                      criterion.type === 'checkbox' ? 'CHECK' : ''}
