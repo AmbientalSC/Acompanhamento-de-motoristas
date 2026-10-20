@@ -73,7 +73,10 @@ const CriterionEditor: React.FC<CriterionEditorProps> = ({
   const type = criterion.type || 'rating';
   const isNumber = type === 'number';
   const imagePreview = pendingImagePreview || criterion.imageUrl || '';
-  const radioOptionsWithValue = (criterion.options || []).filter(option => option.value.trim());
+  // Gabarito da múltipla escolha: lista todas as alternativas com texto (o valor assume o texto quando vazio)
+  const radioAnswerOptions = (criterion.options || [])
+    .map(option => ({ label: option.label.trim(), value: option.value.trim() || option.label.trim() }))
+    .filter(option => option.label.length > 0);
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -156,32 +159,34 @@ const CriterionEditor: React.FC<CriterionEditorProps> = ({
             <h4 className="text-sm font-medium text-gray-700 mb-1">
               {isNumber ? 'Opções da lista suspensa (legenda)' : 'Opções de Múltipla Escolha'}
             </h4>
-            {isNumber && (
-              <p className="text-xs text-gray-500 mb-2">
-                Aparecem em "Ver opções" e junto da imagem ampliada. O motorista digita o número correspondente à resposta.
-              </p>
-            )}
+            <p className="text-xs text-gray-500 mb-2">
+              {isNumber
+                ? 'Aparecem em "Ver opções" e junto da imagem ampliada. O motorista digita o número correspondente à resposta.'
+                : 'Cada alternativa aparece para o motorista escolher. Marque a correta em "Resposta correta (gabarito)" abaixo.'}
+            </p>
             <div className="space-y-3 sm:space-y-2">
               {(criterion.options || [{ label: '', value: '' }]).map((option, optionIndex) => (
                 <div
                   key={optionIndex}
-                  className="grid grid-cols-1 gap-3 rounded-brand border border-gray-200 bg-brand-gray p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0"
+                  className={`grid grid-cols-1 gap-3 rounded-brand border border-gray-200 bg-brand-gray p-3 ${isNumber ? 'sm:grid-cols-[1fr_1fr_auto]' : 'sm:grid-cols-[1fr_auto]'} sm:items-end sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0`}
                 >
                   <Input
-                    label={`Opção ${optionIndex + 1} - Texto`}
+                    label={isNumber ? `Opção ${optionIndex + 1} - Texto` : `Alternativa ${optionIndex + 1}`}
                     value={option.label}
                     onChange={(e) => onOptionChange(index, optionIndex, 'label', e.target.value)}
-                    placeholder={isNumber ? 'Ex: Freio de serviço' : 'Ex: Excelente'}
+                    placeholder={isNumber ? 'Ex: Freio de serviço' : 'Ex: Proibido estacionar'}
                     wrapperClassName="min-w-0"
                   />
-                  <Input
-                    label={isNumber ? `Opção ${optionIndex + 1} - Número` : `Opção ${optionIndex + 1} - Valor`}
-                    value={option.value}
-                    onChange={(e) => onOptionChange(index, optionIndex, 'value', e.target.value)}
-                    placeholder={isNumber ? 'Ex: 1' : 'Ex: excelente'}
-                    inputMode={isNumber ? 'decimal' : undefined}
-                    wrapperClassName="min-w-0"
-                  />
+                  {isNumber && (
+                    <Input
+                      label={`Opção ${optionIndex + 1} - Número`}
+                      value={option.value}
+                      onChange={(e) => onOptionChange(index, optionIndex, 'value', e.target.value)}
+                      placeholder="Ex: 1"
+                      inputMode="decimal"
+                      wrapperClassName="min-w-0"
+                    />
+                  )}
                   <Button
                     onClick={() => onOptionRemove(index, optionIndex)}
                     variant="danger"
@@ -260,9 +265,9 @@ const CriterionEditor: React.FC<CriterionEditorProps> = ({
                 onChange={(e) => onChange(index, 'correctAnswer', e.target.value)}
               >
                 <option value="">Sem gabarito</option>
-                {radioOptionsWithValue.map((option, optionIndex) => (
+                {radioAnswerOptions.map((option, optionIndex) => (
                   <option key={`${option.value}-${optionIndex}`} value={option.value}>
-                    {option.label || option.value}
+                    {option.label}
                   </option>
                 ))}
               </Select>

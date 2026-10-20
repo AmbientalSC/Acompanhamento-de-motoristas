@@ -47,6 +47,17 @@ const FormsViewer: React.FC = () => {
     return fieldById ? fieldById.name : fieldKey;
   };
 
+  // Texto exibido da resposta: em múltipla escolha mostra o texto da alternativa (não o valor gravado)
+  const getDisplayValue = (fieldKey: string, value: unknown, templateId?: string): string => {
+    if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+    const text = String(value);
+    const criterion = templates
+      .find(t => t.id === templateId)
+      ?.criteriaConfig?.find(c => c.name === fieldKey || c.id === fieldKey);
+    const option = criterion?.type === 'radio' ? criterion.options?.find(o => o.value === text) : undefined;
+    return option?.label || text;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -392,7 +403,7 @@ const FormsViewer: React.FC = () => {
                                   {getFieldName(fieldKey, form.templateId)}
                                 </dt>
                                 <dd className="text-sm text-brand-dark break-words whitespace-pre-wrap">
-                                  {typeof value === 'boolean' ? (value ? 'Sim' : 'Não') : String(value)}
+                                  {getDisplayValue(fieldKey, value, form.templateId)}
                                 </dd>
                               </div>
                             ));

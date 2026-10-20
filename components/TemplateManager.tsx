@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Icon from './ui/Icon';
 import type { IconName } from './ui/iconNames';
-import type { EvaluationTemplate, EvaluationCriterion, FieldType, User } from '../types';
+import type { EvaluationTemplate, EvaluationCriterion, FieldType, RadioOption, User } from '../types';
 import { getTemplates, saveTemplate, updateTemplate, deleteTemplate, getBranches, saveBranch, deleteBranch, getUsers, saveUser, updateUser, deleteUser } from '../services/firebaseService';
 import { deleteTemplateImage, uploadTemplateImage, validateTemplateImage } from '../services/templateImageService';
 import { supportsAnswerKey } from '../utils/gradingUtils';
@@ -170,10 +170,23 @@ const isNumericText = (value: string): boolean => {
   return normalized.length > 0 && Number.isFinite(Number(normalized));
 };
 
+// Alternativas da múltipla escolha: o valor gravado é o texto, a menos que o modelo (legado) tenha um valor próprio
+const getRadioOptions = (criterion: EvaluationCriterion): RadioOption[] =>
+  (criterion.options || [])
+    .map(option => ({ label: option.label.trim(), value: option.value.trim() || option.label.trim() }))
+    .filter(option => option.label.length > 0);
+
 // Retorna a primeira mensagem de erro encontrada nos critérios, ou null se estiverem válidos
 const validateCriteria = (criteria: EvaluationCriterion[]): string | null => {
   for (const criterion of criteria) {
     const label = `"${criterion.name.trim()}"`;
+
+    if (criterion.type === 'radio') {
+      const values = getRadioOptions(criterion).map(option => option.value);
+      if (new Set(values).size !== values.length) {
+        return `Campo ${label}: há alternativas repetidas.`;
+      }
+    }
 
     if (criterion.type === 'number') {
       const invalidOption = (criterion.options || []).find(
@@ -191,7 +204,7 @@ const validateCriteria = (criteria: EvaluationCriterion[]): string | null => {
     if (criterion.type === 'number' && !isNumericText(correctAnswer)) {
       return `Campo ${label}: a resposta correta deve ser um número.`;
     }
-    if (criterion.type === 'radio' && !(criterion.options || []).some(option => option.value.trim() === correctAnswer)) {
+    if (criterion.type === 'radio' && !getRadioOptions(criterion).some(option => option.value === correctAnswer)) {
       return `Campo ${label}: a resposta correta não corresponde a nenhuma opção.`;
     }
   }
@@ -379,17 +392,27 @@ const TemplateManager: React.FC = () => {
   const handleRadioOptionChange = (criterionIndex: number, optionIndex: number, field: 'label' | 'value', value: string) => {
     const criterion = criteriaConfig[criterionIndex];
 
-    // Se o valor da opção marcada como correta mudou, o gabarito acompanha
     const previous = criterion.options?.[optionIndex];
+    const isRadio = criterion.type === 'radio';
+
+    // Múltipla escolha: o valor gravado acompanha o texto digitado (o campo "Valor" não é mais preenchido à mão)
+    const valueFollowsLabel =
+      isRadio && field === 'label' && previous !== undefined && (previous.value === '' || previous.value === previous.label);
+    const nextValue = valueFollowsLabel || field === 'value' ? value : previous?.value;
+
+    // Se a opção marcada como correta mudou de valor, o gabarito acompanha
     const hasAnswerKey = Boolean(criterion.correctAnswer);
     const followedAnswer =
-      field === 'value' && criterion.type === 'radio' && hasAnswerKey && previous && previous.value === criterion.correctAnswer
-        ? value
+      isRadio && hasAnswerKey && previous !== undefined && previous.value === criterion.correctAnswer && nextValue !== previous.value
+        ? nextValue
         : undefined;
 
     updateCriterionOptions(
       criterionIndex,
-      options => options.map((option, i) => (i === optionIndex ? { ...option, [field]: value } : option)),
+      options => options.map((option, i) => {
+        if (i !== optionIndex) return option;
+        return valueFollowsLabel ? { ...option, label: value, value } : { ...option, [field]: value };
+      }),
       followedAnswer
     );
   };
@@ -582,7 +605,9 @@ const TemplateManager: React.FC = () => {
             type,
             options: type === 'number'
               ? (c.options || []).filter(option => option.label.trim() || option.value.trim())
-              : (c.options || []),
+              : type === 'radio'
+                ? getRadioOptions(c)
+                : (c.options || []),
             placeholder: c.placeholder || '',
             description: c.description || '',
             imageUrl: c.imageUrl || '',
