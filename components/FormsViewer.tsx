@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Icon from './ui/Icon';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
+import { PDFService } from '../services/pdfService';
 import Card from './ui/Card';
 import GradingDetails from './GradingDetails';
 import Select from './ui/Select';
@@ -30,6 +31,7 @@ const FormsViewer: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
   // Função para buscar o nome real do campo - compatível com dados antigos (IDs) e novos (nomes)
   const getFieldName = (fieldKey: string, templateId?: string): string => {
@@ -111,6 +113,18 @@ const FormsViewer: React.FC = () => {
   const handleCancelDelete = useCallback(() => {
     setDeleteConfirm(null);
   }, []);
+
+  const handleGeneratePdf = async (form: Evaluation) => {
+    setPdfGeneratingId(form.id);
+    try {
+      await PDFService.generateEvaluationPDF(form);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF. Tente novamente.');
+    } finally {
+      setPdfGeneratingId(null);
+    }
+  };
 
   const handleDeleteClick = (evaluationId: string, templateName: string) => {
     setDeleteConfirm({ id: evaluationId, name: templateName });
@@ -325,6 +339,20 @@ const FormsViewer: React.FC = () => {
                       </span>
                     </button>
                   </h3>
+                  {/* PDF: sempre visível (permite gerar depois, quando não foi gerado ao encerrar a prova) */}
+                  <button
+                    type="button"
+                    onClick={() => handleGeneratePdf(form)}
+                    disabled={pdfGeneratingId === form.id}
+                    aria-label={`Gerar PDF do formulário ${formName}`}
+                    title="Gerar PDF"
+                    className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-brand-primary transition-colors duration-200 hover:bg-brand-light focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:w-9"
+                  >
+                    <Icon
+                      name={pdfGeneratingId === form.id ? 'loader-2' : 'download'}
+                      className={`h-5 w-5 sm:h-4 sm:w-4 ${pdfGeneratingId === form.id ? 'animate-spin' : ''}`}
+                    />
+                  </button>
                   {/* Excluir: sempre visível no toque; com mouse só aparece no hover/foco do cartão */}
                   <button
                     type="button"
