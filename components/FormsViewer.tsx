@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Icon from './ui/Icon';
-import type { Evaluation, EvaluationTemplate } from '../types';
+import type { Evaluation, EvaluationCriterion, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import Card from './ui/Card';
 import GradingDetails from './GradingDetails';
+import QuestionImage from './ui/QuestionImage';
 import Select from './ui/Select';
 import Input from './ui/Input';
 import Button from './ui/Button';
@@ -47,6 +48,16 @@ const FormsViewer: React.FC = () => {
     // Se é um ID de campo (dados antigos), busca pelo ID e retorna o nome
     const fieldById = template.criteriaConfig.find(c => c.id === fieldKey);
     return fieldById ? fieldById.name : fieldKey;
+  };
+
+  // Critério de um campo de `fieldValues`: por id (dados antigos) ou por nome (dados novos).
+  // Perguntas com o mesmo nome são ambíguas (as respostas colidem), então por nome só vale se for único.
+  const findCriterion = (fieldKey: string, templateId?: string): EvaluationCriterion | undefined => {
+    const criteria = templates.find(t => t.id === templateId)?.criteriaConfig ?? [];
+    const byId = criteria.find(c => c.id === fieldKey);
+    if (byId) return byId;
+    const byName = criteria.filter(c => c.name === fieldKey);
+    return byName.length === 1 ? byName[0] : undefined;
   };
 
   // Texto exibido da resposta: em múltipla escolha mostra o texto da alternativa (não o valor gravado)
@@ -382,7 +393,10 @@ const FormsViewer: React.FC = () => {
                   <>
                     {form.grading && (
                       <div className="mt-4 border-t pt-4">
-                        <GradingDetails grading={form.grading} />
+                        <GradingDetails
+                          grading={form.grading}
+                          criteria={templates.find(t => t.id === form.templateId)?.criteriaConfig}
+                        />
                       </div>
                     )}
 
@@ -425,16 +439,31 @@ const FormsViewer: React.FC = () => {
                               orderedEntries = entries;
                             }
 
-                            return orderedEntries.map(([fieldKey, value]) => (
-                              <div key={fieldKey} className="min-w-0 rounded-brand bg-gray-50 p-3">
-                                <dt className="mb-1 text-xs font-medium text-gray-600 break-words">
-                                  {getFieldName(fieldKey, form.templateId)}
-                                </dt>
-                                <dd className="text-sm text-brand-dark break-words whitespace-pre-wrap">
-                                  {getDisplayValue(fieldKey, value, form.templateId)}
-                                </dd>
-                              </div>
-                            ));
+                            return orderedEntries.map(([fieldKey, value]) => {
+                              const criterion = findCriterion(fieldKey, form.templateId);
+                              const fieldName = getFieldName(fieldKey, form.templateId);
+
+                              return (
+                                <div key={fieldKey} className="min-w-0 rounded-brand bg-gray-50 p-3">
+                                  <dt className="mb-1 text-xs font-medium text-gray-600 break-words">
+                                    {fieldName}
+                                  </dt>
+                                  {criterion?.imageUrl && (
+                                    <div className="mb-2">
+                                      <QuestionImage
+                                        compact
+                                        src={criterion.imageUrl}
+                                        alt={fieldName}
+                                        options={criterion.type === 'number' ? criterion.options : undefined}
+                                      />
+                                    </div>
+                                  )}
+                                  <dd className="text-sm text-brand-dark break-words whitespace-pre-wrap">
+                                    {getDisplayValue(fieldKey, value, form.templateId)}
+                                  </dd>
+                                </div>
+                              );
+                            });
                           })()}
                         </dl>
                       </div>

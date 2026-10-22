@@ -2,23 +2,16 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import type { RadioOption } from '../../types';
+import { isTrustedImageUrl } from '../../utils/imageUtils';
 
 interface QuestionImageProps {
   src?: string;
   alt: string;
   // Quando informado, exibe a legenda (lista suspensa "Ver opções" e, na imagem ampliada, a lista junto da foto)
   options?: RadioOption[];
+  // Miniatura para listas de resultado (a imagem completa abre ao tocar)
+  compact?: boolean;
 }
-
-// `imageUrl` vem do Firestore (gravável por qualquer usuário autenticado): só exibe imagens do Firebase Storage
-const isTrustedImageUrl = (url: string): boolean => {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && parsed.hostname === 'firebasestorage.googleapis.com';
-  } catch {
-    return false;
-  }
-};
 
 interface LegendListProps {
   legend: RadioOption[];
@@ -38,7 +31,7 @@ const LegendList: React.FC<LegendListProps> = ({ legend, id, className = '' }) =
   </ul>
 );
 
-const QuestionImage: React.FC<QuestionImageProps> = ({ src, alt, options }) => {
+const QuestionImage: React.FC<QuestionImageProps> = ({ src, alt, options, compact = false }) => {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
@@ -172,7 +165,7 @@ const QuestionImage: React.FC<QuestionImageProps> = ({ src, alt, options }) => {
   );
 
   return (
-    <div ref={containerRef} className="max-w-md min-w-0">
+    <div ref={containerRef} className={`${compact ? 'max-w-[9rem]' : 'max-w-md'} min-w-0`}>
       {hasImage && !hasFailed && (
         <button
           ref={viewerTriggerRef}
@@ -188,13 +181,15 @@ const QuestionImage: React.FC<QuestionImageProps> = ({ src, alt, options }) => {
             loading="lazy"
             referrerPolicy="no-referrer"
             onError={() => setFailedSrc(src as string)}
-            className="w-full max-h-72 object-contain rounded-brand border border-gray-200 bg-white"
+            className={`w-full ${compact ? 'max-h-28' : 'max-h-72'} object-contain rounded-brand border border-gray-200 bg-white`}
           />
           <span
-            className="pointer-events-none absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white"
+            className={`pointer-events-none absolute flex items-center justify-center rounded-full bg-black/60 text-white ${
+              compact ? 'bottom-1 right-1 h-7 w-7' : 'bottom-2 right-2 h-9 w-9'
+            }`}
             aria-hidden="true"
           >
-            <Icon name="zoom-in" className="h-5 w-5" />
+            <Icon name="zoom-in" className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
           </span>
         </button>
       )}

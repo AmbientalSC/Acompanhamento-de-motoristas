@@ -1,9 +1,92 @@
 import jsPDF from 'jspdf';
-import type { Evaluation, EvaluationGrading } from '../types';
+import type { Evaluation, EvaluationGrading, EvaluationTemplate } from '../types';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
+import { isTrustedImageUrl } from '../utils/imageUtils';
 import { getTemplates } from './firebaseService';
 
+interface PdfImage {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
+// Imagens das perguntas são reduzidas antes de entrar no PDF (um teste pode ter dezenas delas)
+const PDF_IMAGE_MAX_PX = 800;
+const PDF_IMAGE_JPEG_QUALITY = 0.85;
+const PDF_IMAGE_MAX_WIDTH_MM = 60;
+const PDF_IMAGE_MAX_HEIGHT_MM = 45;
+
 export class PDFService {
+  // Falha ao carregar o modelo não impede o PDF: sem ele só se perde a ordem/nomes dos critérios e as imagens
+  private static async loadTemplate(templateId: string): Promise<EvaluationTemplate | undefined> {
+    try {
+      const templates = await getTemplates();
+      return templates.find(t => t.id === templateId);
+    } catch (error) {
+      console.warn('Erro ao carregar o modelo para o PDF:', error);
+      return undefined;
+    }
+  }
+
+  // Baixa a imagem (o Storage responde com CORS aberto), reduz e converte para JPEG; `null` se não carregar
+  private static loadImage(url: string): Promise<PdfImage | null> {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const scale = Math.min(1, PDF_IMAGE_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+        const width = Math.max(1, Math.round(img.naturalWidth * scale));
+        const height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        // JPEG não tem transparência: fundo branco evita áreas pretas em PNG/WebP
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          resolve({ dataUrl: canvas.toDataURL('image/jpeg', PDF_IMAGE_JPEG_QUALITY), width, height });
+        } catch (error) {
+          console.warn('Erro ao converter imagem da pergunta para o PDF:', error);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        console.warn('Erro ao carregar imagem da pergunta para o PDF:', url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  }
+
+  // Imagens das perguntas corrigidas, indexadas pelo id do critério (imagens repetidas são baixadas uma vez)
+  private static async loadGradingImages(
+    grading: EvaluationGrading,
+    template: EvaluationTemplate | undefined
+  ): Promise<Map<string, PdfImage>> {
+    const urlByCriterion = new Map<string, string>();
+    grading.items.forEach(item => {
+      const url = template?.criteriaConfig?.find(c => c.id === item.criterionId)?.imageUrl;
+      if (url && isTrustedImageUrl(url)) urlByCriterion.set(item.criterionId, url);
+    });
+
+    const uniqueUrls = [...new Set(urlByCriterion.values())];
+    const loaded = await Promise.all(uniqueUrls.map(async url => [url, await this.loadImage(url)] as const));
+    const imageByUrl = new Map(loaded);
+
+    const imageByCriterion = new Map<string, PdfImage>();
+    urlByCriterion.forEach((url, criterionId) => {
+      const image = imageByUrl.get(url);
+      if (image) imageByCriterion.set(criterionId, image);
+    });
+    return imageByCriterion;
+  }
+
   private static async loadLogo(): Promise<string> {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -35,6 +118,8 @@ export class PDFService {
   }
 
   static async generateEvaluationPDF(evaluation: Evaluation): Promise<void> {
+    // Começa já: o modelo carrega enquanto o cabeçalho (logo) é montado
+    const templatePromise = this.loadTemplate(evaluation.templateId);
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -168,8 +253,7 @@ export class PDFService {
     // Tenta mapear os ids das pontuações para os nomes (labels) do template usado
     let orderedEntries: [string, number][] = [];
     try {
-      const templates = await getTemplates();
-      const template = templates.find(t => t.id === evaluation.templateId);
+      const template = await templatePromise;
       const entries = Object.entries(evaluation.scores || {});
 
       if (template) {
@@ -260,7 +344,8 @@ export class PDFService {
     }
 
     if (evaluation.grading) {
-      yPosition = this.drawGradingSection(pdf, evaluation.grading, margin, contentWidth, pageHeight, yPosition);
+      const gradingImages = await this.loadGradingImages(evaluation.grading, await templatePromise);
+      yPosition = this.drawGradingSection(pdf, evaluation.grading, gradingImages, margin, contentWidth, pageHeight, yPosition);
     }
 
     // Observações
@@ -520,10 +605,11 @@ export class PDFService {
     pdf.save(fileName);
   }
 
-  // Seção "RESULTADO DO TESTE": acertos e, por pergunta, resposta dada × esperada (somente texto)
+  // Seção "RESULTADO DO TESTE": acertos e, por pergunta, imagem (quando houver) e resposta dada × esperada
   private static drawGradingSection(
     pdf: jsPDF,
     grading: EvaluationGrading,
+    images: Map<string, PdfImage>,
     margin: number,
     contentWidth: number,
     pageHeight: number,
@@ -556,7 +642,15 @@ export class PDFService {
         (item.isCorrect ? '' : `   |   Esperado: ${item.expected}`);
       const answerLines: string[] = pdf.splitTextToSize(answerLine, contentWidth - 5);
 
-      ensureSpace((nameLines.length + answerLines.length) * 5 + 4);
+      // Imagem ajustada à caixa máxima, mantendo a proporção
+      const image = images.get(item.criterionId);
+      const imageRatio = image
+        ? Math.min(PDF_IMAGE_MAX_WIDTH_MM / image.width, PDF_IMAGE_MAX_HEIGHT_MM / image.height)
+        : 0;
+      const imageWidth = image ? image.width * imageRatio : 0;
+      const imageHeight = image ? image.height * imageRatio : 0;
+
+      ensureSpace((nameLines.length + answerLines.length) * 5 + 4 + (image ? imageHeight + 3 : 0));
 
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0, 0, 0);
@@ -568,6 +662,14 @@ export class PDFService {
       }
       pdf.text(item.isCorrect ? 'CORRETA' : 'ERRADA', margin + contentWidth, yPosition, { align: 'right' });
       yPosition += nameLines.length * 5;
+
+      if (image) {
+        const imageY = yPosition - 2;
+        pdf.addImage(image.dataUrl, 'JPEG', margin + 3, imageY, imageWidth, imageHeight);
+        pdf.setDrawColor(200, 200, 200);
+        pdf.rect(margin + 3, imageY, imageWidth, imageHeight);
+        yPosition += imageHeight + 3;
+      }
 
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(60, 60, 60);

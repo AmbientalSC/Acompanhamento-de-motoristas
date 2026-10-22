@@ -51,6 +51,7 @@ Perfis: `admin` (tudo) e `manager`. `canAccessMN10` = admin ou flag no perfil. *
 - **Imagem na pergunta**: atributo opcional de qualquer critério (`imageUrl` + `imagePath`), enviado ao Storage em `templates/images/{uuid}/{arquivo}` por `services/templateImageService.ts` **só ao salvar o modelo** (upload adiado; arquivos trocados/removidos são apagados depois, e os enviados são desfeitos se o salvamento falhar). Escrita só para admin (`isAdmin()` em `storage.rules`, que também limita 5 MB e jpeg/png/webp — manter em sincronia com o serviço). `QuestionImage` só exibe URLs de `firebasestorage.googleapis.com`.
 - Tipo `number`: resposta digitada; `options` funcionam como **legenda** (lista suspensa em "Ver opções" e também junto da imagem ampliada), não como resposta.
 - **Gabarito**: `correctAnswer` por critério `text`/`number`/`radio` (`utils/gradingUtils.ts#gradeEvaluation`). O resultado é gravado em `Evaluation.grading` como **snapshot** (editar o gabarito depois não altera avaliações antigas) e mostrado na tela de resultado (passo 3 do `EvaluationForm`, `EvaluationResult`), no `FormsViewer` e no PDF. `fieldValues` é indexado pelo **nome** do critério ao salvar, mas a correção roda antes disso, com ids.
+- No `FormsViewer` as imagens aparecem em miniatura (`QuestionImage compact`) no resultado do gabarito (`GradingDetails`, via prop `criteria`) e em "Dados Preenchidos". A imagem vem do **modelo atual** (o `grading` não guarda a URL); em "Dados Preenchidos" o critério é achado por id ou por nome **único** (`fieldValues` é indexado pelo nome, então perguntas com nome repetido colidem).
 - Tocar na imagem de uma pergunta abre o visualizador ampliado (`QuestionImage`, portal em `document.body`; alterna ajustar à tela/tamanho real; mostra a legenda embaixo quando houver).
 - O editor de critérios fica em `components/templates/CriterionEditor.tsx`; `TemplateManager` concentra estado, upload e salvamento.
 - `data/exampleTemplates.ts` alimenta a ação de importar exemplos em `TemplateManager`. `constants.ts` (`EVALUATION_CRITERIA`) não é importado por ninguém.
@@ -67,7 +68,7 @@ A validação existe **em três lugares que precisam ficar sincronizados**: `MN1
 
 ### PDF
 
-`jspdf` + `html2canvas`. `services/pdfService.ts` (avaliação individual — com bloco "RESULTADO DO TESTE" quando há `grading`, sem imagens — e análise por motorista; carrega o logo `./ambiental.svg` via canvas) e `services/mn10PdfService.ts` (respostas MN10).
+`jspdf` + `html2canvas`. `services/pdfService.ts` (avaliação individual — com bloco "RESULTADO DO TESTE" quando há `grading`, incluindo a imagem de cada pergunta — lida do **modelo atual** por `criterionId`, baixada do Storage (que responde com CORS aberto) e reduzida para JPEG; se a imagem não carregar, o PDF sai sem ela — e análise por motorista; carrega o logo `./ambiental.svg` via canvas) e `services/mn10PdfService.ts` (respostas MN10).
 
 ## GitHub Pages (armadilhas)
 
