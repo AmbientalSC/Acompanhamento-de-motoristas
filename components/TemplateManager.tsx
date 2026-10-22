@@ -93,6 +93,7 @@ const RowActions: React.FC<RowActionsProps> = ({ onEdit, onDelete, itemLabel }) 
 const TemplateKindBadge: React.FC<{ template: EvaluationTemplate }> = ({ template }) => {
   if (template.headerType === 'evaluation') return <Badge tone="green">Avaliação</Badge>;
   if (template.headerType === 'rh') return <Badge tone="brand">RH</Badge>;
+  if (template.headerType === 'candidate') return <Badge tone="brand">Candidato</Badge>;
   if (template.includeHeader === true) return <Badge tone="green">Avaliação</Badge>;
   return <Badge tone="neutral">Formulário</Badge>;
 };
@@ -227,7 +228,7 @@ const TemplateManager: React.FC = () => {
     required: false, 
     type: 'rating' 
   }]);
-  const [headerType, setHeaderType] = useState<'evaluation' | 'rh' | undefined>('evaluation');
+  const [headerType, setHeaderType] = useState<EvaluationTemplate['headerType']>('evaluation');
   const [includeFinalConsiderations, setIncludeFinalConsiderations] = useState(true);
   const [pendingImages, setPendingImages] = useState<Record<string, PendingImage>>({});
   const pendingImagesRef = useRef(pendingImages);
@@ -618,7 +619,8 @@ const TemplateManager: React.FC = () => {
         includeHeader: hasHeader,
         headerType,
         includeFinalConsiderations,
-        isFormOnly: !hasHeader,
+        // Candidato tem cabeçalho (nome/telefone) mas, como o formulário sem cabeçalho, não calcula média
+        isFormOnly: !hasHeader || headerType === 'candidate',
       };
 
       const previousImagePaths = (templates.find(t => t.id === editingTemplateId)?.criteriaConfig || [])
@@ -958,6 +960,25 @@ const TemplateManager: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Cabeçalho de RH</span>
                           <span className="block text-xs text-gray-500">
                             Campos: Nome do Colaborador, Função, Turno Principal, Equipe/Setor, Filial, Data e Média Geral.
+                          </span>
+                        </div>
+                      </label>
+                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
+                        headerType === 'candidate'
+                          ? 'border-brand-primary bg-brand-light'
+                          : 'border-gray-200 hover:bg-gray-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="headerType"
+                          checked={headerType === 'candidate'}
+                          onChange={() => setHeaderType('candidate')}
+                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
+                        />
+                        <div className="ml-3 min-w-0">
+                          <span className="text-sm font-medium text-gray-700">Cabeçalho de Candidato</span>
+                          <span className="block text-xs text-gray-500">
+                            Campos: Data, Nome e Telefone do candidato. Sem média geral. Ideal para testes de volante e de placa.
                           </span>
                         </div>
                       </label>

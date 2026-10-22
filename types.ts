@@ -64,7 +64,7 @@ export interface EvaluationTemplate {
   criteria: string[]; // Mantido para compatibilidade com dados existentes
   criteriaConfig?: EvaluationCriterion[]; // Nova estrutura com configurações
   includeHeader?: boolean; // Se deve incluir cabeçalho de avaliação (motorista, filial, etc)
-  headerType?: 'evaluation' | 'rh'; // Tipo de cabeçalho (avaliação ou RH)
+  headerType?: 'evaluation' | 'rh' | 'candidate'; // Tipo de cabeçalho (avaliação, RH ou candidato: só data, nome e telefone)
   includeFinalConsiderations?: boolean; // Se deve incluir campo de considerações finais
   isFormOnly?: boolean; // Se é apenas um formulário (sem avaliação)
 }
@@ -90,6 +90,7 @@ export interface Evaluation {
   funcao?: string; // Função/cargo (cabeçalho RH)
   turnoPrincipal?: string; // Turno principal (cabeçalho RH)
   equipeSetor?: string; // Equipe/setor (cabeçalho RH)
+  telefone?: string; // Telefone do candidato (cabeçalho de candidato; o nome fica em `motorista`)
   grading?: EvaluationGrading; // Resultado da correção (apenas modelos com gabarito)
   pros: string;
   contras: string;

@@ -57,6 +57,7 @@ const ICONS = [
   'medal',
   'menu-2',
   'pencil',
+  'phone',
   'photo',
   'photo-off',
   'photo-plus',

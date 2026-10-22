@@ -181,6 +181,7 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         funcao: data.funcao,
         turnoPrincipal: data.turnoPrincipal,
         equipeSetor: data.equipeSetor,
+        telefone: data.telefone,
         grading: data.grading,
         pros: data.pros,
         contras: data.contras,

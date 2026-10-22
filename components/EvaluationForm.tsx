@@ -3,9 +3,10 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import Icon from './ui/Icon';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
-import { PDFService } from '../services/pdfService';
+import { PDFService, describeMissingPdfImages } from '../services/pdfService';
 import { gradeEvaluation } from '../utils/gradingUtils';
 import { normalizePersonName } from '../utils/nameUtils';
+import { applyPhoneMask } from '../utils/mn10FieldUtils';
 import RatingSlider from './RatingSlider';
 import DynamicField from './ui/DynamicField';
 import EvaluationResult from './EvaluationResult';
@@ -31,7 +32,15 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'te
     funcao: '',
     turnoPrincipal: '',
     equipeSetor: '',
+    telefone: '',
 });
+
+// Só os cabeçalhos de avaliação e de RH calculam média geral (candidato e formulário sem cabeçalho não)
+const hasAverageHeader = (template: EvaluationTemplate | null | undefined): boolean =>
+  template?.headerType === 'evaluation' || template?.headerType === 'rh';
+
+// Telefone com DDD no formato da máscara de `applyPhoneMask`: (48)999999999 ou (48)99999999
+const PHONE_PATTERN = '\\(\\d{2}\\)\\d{8,9}';
 
 const isRatingType = (type: string | undefined): boolean => type === 'rating' || type === 'rating-5';
 
@@ -175,8 +184,8 @@ const EvaluationForm: React.FC = () => {
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
 
-    // Se o template não tem cabeçalho, não deve ter averageScore
-    if (!selectedTemplate.headerType) return undefined;
+    // Só cabeçalhos de avaliação e de RH têm averageScore
+    if (!hasAverageHeader(selectedTemplate)) return undefined;
 
     const answeredScores = Object.values(scores);
     if (answeredScores.length === 0) return undefined;
@@ -226,9 +235,13 @@ const EvaluationForm: React.FC = () => {
     
     const hasHeader = selectedTemplate.headerType !== undefined;
     const isRhHeader = selectedTemplate.headerType === 'rh';
-    
+    const isCandidateHeader = selectedTemplate.headerType === 'candidate';
+
+    // O telefone só é gravado nas avaliações de candidato (o nome do candidato fica em `motorista`)
+    const { telefone, ...formFields } = formData;
+
     const evaluationToSave: any = {
-        ...formData,
+        ...formFields,
         scores,
         fieldValues: fieldValuesWithNames,
         templateId: selectedTemplate.id,
@@ -243,6 +256,10 @@ const EvaluationForm: React.FC = () => {
       evaluationToSave.funcao = formData.funcao || '';
       evaluationToSave.turnoPrincipal = formData.turnoPrincipal || '';
       evaluationToSave.equipeSetor = formData.equipeSetor || '';
+    }
+
+    if (isCandidateHeader) {
+      evaluationToSave.telefone = (telefone || '').trim();
     }
 
     // Só adicionar averageScore se o template incluir cabeçalho E houver notas respondidas
@@ -290,7 +307,8 @@ const EvaluationForm: React.FC = () => {
     }
 
     try {
-      await PDFService.generateEvaluationPDF(lastSavedEvaluation);
+      const { missingImages } = await PDFService.generateEvaluationPDF(lastSavedEvaluation);
+      if (missingImages > 0) setPdfError(describeMissingPdfImages(missingImages));
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
       setPdfError('Erro ao gerar PDF. Tente novamente.');
@@ -404,12 +422,12 @@ const EvaluationForm: React.FC = () => {
     );
   }
 
-  const hasAverageHeader = selectedTemplate?.headerType === 'evaluation' || selectedTemplate?.headerType === 'rh';
+  const showsAverage = hasAverageHeader(selectedTemplate);
 
   // Rótulo do botão de envio conforme o tipo do modelo (mantém os textos de cada barra original)
-  const submitLabel = hasAverageHeader
+  const submitLabel = showsAverage
     ? 'Salvar Avaliação'
-    : selectedTemplate?.includeHeader === false
+    : selectedTemplate?.headerType === 'candidate' || selectedTemplate?.includeHeader === false
       ? 'Enviar Formulário'
       : 'Salvar';
 
@@ -501,6 +519,28 @@ const EvaluationForm: React.FC = () => {
             </div>
           </div>
         )}
+        {selectedTemplate?.headerType === 'candidate' && (
+          <div className="p-4 sm:p-6">
+            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho do Candidato</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              <Input label="Data" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
+              <Input label="Nome do Candidato" name="motorista" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.motorista} onChange={handleInputChange} required />
+              <Input
+                label="Telefone"
+                name="telefone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="(xx)xxxxxxxxx"
+                pattern={PHONE_PATTERN}
+                title="Telefone com DDD, no formato (48)999999999"
+                value={formData.telefone || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, telefone: applyPhoneMask(e.target.value) }))}
+                required
+              />
+            </div>
+          </div>
+        )}
       </Card>
       
       {selectedTemplate && ((selectedTemplate.criteriaConfig && selectedTemplate.criteriaConfig.length > 0) || (selectedTemplate.criteria && selectedTemplate.criteria.length > 0)) && (
@@ -565,7 +605,7 @@ const EvaluationForm: React.FC = () => {
         {actionBarError && <ErrorBanner message={actionBarError} className="mb-3" />}
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {hasAverageHeader && (
+          {showsAverage && (
             <div className="flex flex-wrap items-center justify-between sm:justify-start gap-x-3 gap-y-1 min-w-0">
               <span className="text-sm sm:text-lg font-medium text-gray-600">
                 <span className="sm:hidden">Média geral:</span>

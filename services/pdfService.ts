@@ -10,6 +10,41 @@ interface PdfImage {
   height: number;
 }
 
+export interface EvaluationPdfResult {
+  // Perguntas com imagem que não puderam entrar no PDF (o PDF é gerado mesmo assim)
+  missingImages: number;
+}
+
+export const describeMissingPdfImages = (count: number): string =>
+  `PDF gerado, mas ${count === 1 ? '1 imagem das perguntas não pôde' : `${count} imagens das perguntas não puderam`} ser incluída${count === 1 ? '' : 's'}. Avise o TI.`;
+
+// Tipo do relatório, deduzido dos dados da avaliação: telefone = candidato, nomeColaborador = RH
+type ReportKind = 'driver' | 'rh' | 'candidate';
+
+const getReportKind = (evaluation: Evaluation): ReportKind => {
+  if (evaluation.telefone) return 'candidate';
+  return evaluation.nomeColaborador ? 'rh' : 'driver';
+};
+
+const REPORT_TITLES: Record<ReportKind, string> = {
+  driver: 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA',
+  rh: 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR',
+  candidate: 'RELATÓRIO DE TESTE DE CANDIDATO',
+};
+
+const INFO_TITLES: Record<ReportKind, string> = {
+  driver: 'INFORMAÇÕES DO MOTORISTA',
+  rh: 'INFORMAÇÕES DO COLABORADOR',
+  candidate: 'INFORMAÇÕES DO CANDIDATO',
+};
+
+// `YYYY-MM-DD` → `DD/MM/YYYY` sem passar por Date (new Date('2026-10-22') é UTC e mostraria o dia anterior no Brasil)
+const formatIsoDate = (isoDate: string): string => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate;
+  const [year, month, day] = isoDate.split('-');
+  return `${day}/${month}/${year}`;
+};
+
 // Imagens das perguntas são reduzidas antes de entrar no PDF (um teste pode ter dezenas delas)
 const PDF_IMAGE_MAX_PX = 800;
 const PDF_IMAGE_JPEG_QUALITY = 0.85;
@@ -64,11 +99,12 @@ export class PDFService {
     });
   }
 
-  // Imagens das perguntas corrigidas, indexadas pelo id do critério (imagens repetidas são baixadas uma vez)
+  // Imagens das perguntas corrigidas, indexadas pelo id do critério (imagens repetidas são baixadas uma vez).
+  // `requested` é quantas perguntas têm imagem: a diferença para `images.size` são as que falharam.
   private static async loadGradingImages(
     grading: EvaluationGrading,
     template: EvaluationTemplate | undefined
-  ): Promise<Map<string, PdfImage>> {
+  ): Promise<{ images: Map<string, PdfImage>; requested: number }> {
     const urlByCriterion = new Map<string, string>();
     grading.items.forEach(item => {
       const url = template?.criteriaConfig?.find(c => c.id === item.criterionId)?.imageUrl;
@@ -84,7 +120,7 @@ export class PDFService {
       const image = imageByUrl.get(url);
       if (image) imageByCriterion.set(criterionId, image);
     });
-    return imageByCriterion;
+    return { images: imageByCriterion, requested: urlByCriterion.size };
   }
 
   private static async loadLogo(): Promise<string> {
@@ -117,9 +153,10 @@ export class PDFService {
     });
   }
 
-  static async generateEvaluationPDF(evaluation: Evaluation): Promise<void> {
+  static async generateEvaluationPDF(evaluation: Evaluation): Promise<EvaluationPdfResult> {
     // Começa já: o modelo carrega enquanto o cabeçalho (logo) é montado
     const templatePromise = this.loadTemplate(evaluation.templateId);
+    const reportKind = getReportKind(evaluation);
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -141,14 +178,12 @@ export class PDFService {
       pdf.addImage(logoDataURL, 'PNG', logoX, 10, logoWidth, logoHeight);
       
       // Título do relatório - abaixo da logo centralizada
-      const isRh = !!evaluation.nomeColaborador;
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(isRh ? 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR' : 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(REPORT_TITLES[reportKind], pageWidth / 2, 50, { align: 'center' });
     } catch (error) {
       console.warn('Erro ao carregar logo, usando texto como fallback:', error);
-      const isRh2 = !!evaluation.nomeColaborador;
       // Fallback: texto da logo
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(16);
@@ -159,7 +194,7 @@ export class PDFService {
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(isRh2 ? 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR' : 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA', pageWidth / 2, 50, { align: 'center' });
+      pdf.text(REPORT_TITLES[reportKind], pageWidth / 2, 50, { align: 'center' });
     }
     
     // Posição inicial do conteúdo - ajustada para dar espaço ao cabeçalho
@@ -169,33 +204,42 @@ export class PDFService {
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
-    const isRhEval = !!evaluation.nomeColaborador;
-    pdf.text(isRhEval ? 'INFORMAÇÕES DO COLABORADOR' : 'INFORMAÇÕES DO MOTORISTA', margin, yPosition);
+    pdf.text(INFO_TITLES[reportKind], margin, yPosition);
     yPosition += 10;
 
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'normal');
-    
-    const driverInfo = isRhEval ? [
-      { label: 'Nome:', value: evaluation.nomeColaborador || evaluation.motorista },
-      { label: 'Função:', value: evaluation.funcao || '' },
-      { label: 'Turno Principal:', value: evaluation.turnoPrincipal || '' },
-      { label: 'Equipe/Setor:', value: evaluation.equipeSetor || '' },
-      { label: 'Filial:', value: evaluation.filial },
-      { label: 'Data:', value: new Date(evaluation.data).toLocaleDateString('pt-BR') },
-      { label: 'Modelo:', value: evaluation.templateName }
-    ] : [
-      { label: 'Nome:', value: evaluation.motorista },
-      { label: 'Matrícula:', value: evaluation.matricula },
-      { label: 'Setor:', value: evaluation.setor },
-      { label: 'Turno:', value: evaluation.turno },
-      { label: 'Filial:', value: evaluation.filial },
-      { label: 'Veículo:', value: evaluation.vt },
-      { label: 'Data da Avaliação:', value: new Date(evaluation.data).toLocaleDateString('pt-BR') },
-      { label: 'Modelo de Avaliação:', value: evaluation.templateName }
-    ];
 
-    driverInfo.forEach(info => {
+    const dateText = formatIsoDate(evaluation.data);
+    const infoByKind: Record<ReportKind, Array<{ label: string; value: string }>> = {
+      candidate: [
+        { label: 'Nome:', value: evaluation.motorista },
+        { label: 'Telefone:', value: evaluation.telefone || '' },
+        { label: 'Data:', value: dateText },
+        { label: 'Modelo:', value: evaluation.templateName }
+      ],
+      rh: [
+        { label: 'Nome:', value: evaluation.nomeColaborador || evaluation.motorista },
+        { label: 'Função:', value: evaluation.funcao || '' },
+        { label: 'Turno Principal:', value: evaluation.turnoPrincipal || '' },
+        { label: 'Equipe/Setor:', value: evaluation.equipeSetor || '' },
+        { label: 'Filial:', value: evaluation.filial },
+        { label: 'Data:', value: dateText },
+        { label: 'Modelo:', value: evaluation.templateName }
+      ],
+      driver: [
+        { label: 'Nome:', value: evaluation.motorista },
+        { label: 'Matrícula:', value: evaluation.matricula },
+        { label: 'Setor:', value: evaluation.setor },
+        { label: 'Turno:', value: evaluation.turno },
+        { label: 'Filial:', value: evaluation.filial },
+        { label: 'Veículo:', value: evaluation.vt },
+        { label: 'Data da Avaliação:', value: dateText },
+        { label: 'Modelo de Avaliação:', value: evaluation.templateName }
+      ],
+    };
+
+    infoByKind[reportKind].forEach(info => {
       pdf.setFont('helvetica', 'bold');
       pdf.text(info.label, margin, yPosition);
       pdf.setFont('helvetica', 'normal');
@@ -343,9 +387,11 @@ export class PDFService {
       yPosition += 15;
     }
 
+    let missingImages = 0;
     if (evaluation.grading) {
-      const gradingImages = await this.loadGradingImages(evaluation.grading, await templatePromise);
-      yPosition = this.drawGradingSection(pdf, evaluation.grading, gradingImages, margin, contentWidth, pageHeight, yPosition);
+      const { images, requested } = await this.loadGradingImages(evaluation.grading, await templatePromise);
+      missingImages = requested - images.size;
+      yPosition = this.drawGradingSection(pdf, evaluation.grading, images, margin, contentWidth, pageHeight, yPosition);
     }
 
     // Observações
@@ -422,6 +468,8 @@ export class PDFService {
     // Salvar PDF
     const fileName = `avaliacao_${evaluation.motorista}_${evaluation.data.replace(/-/g, '')}.pdf`;
     pdf.save(fileName);
+
+    return { missingImages };
   }
 
   static async generateDriverAnalysisPDF(evaluations: Evaluation[]): Promise<void> {
@@ -578,7 +626,7 @@ export class PDFService {
         yPosition = margin;
       }
       
-      const date = new Date(evaluation.data).toLocaleDateString('pt-BR');
+      const date = formatIsoDate(evaluation.data);
   const status = getEvaluationStatus(evaluation.averageScore ?? 0, evaluation.ratingScale);
       
       pdf.text(date, margin + 2, yPosition);

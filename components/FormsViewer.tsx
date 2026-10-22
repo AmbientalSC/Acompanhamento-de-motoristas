@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Icon from './ui/Icon';
 import type { Evaluation, EvaluationCriterion, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
-import { PDFService } from '../services/pdfService';
+import { PDFService, describeMissingPdfImages } from '../services/pdfService';
 import Card from './ui/Card';
 import GradingDetails from './GradingDetails';
 import QuestionImage from './ui/QuestionImage';
@@ -128,7 +128,8 @@ const FormsViewer: React.FC = () => {
   const handleGeneratePdf = async (form: Evaluation) => {
     setPdfGeneratingId(form.id);
     try {
-      await PDFService.generateEvaluationPDF(form);
+      const { missingImages } = await PDFService.generateEvaluationPDF(form);
+      if (missingImages > 0) alert(describeMissingPdfImages(missingImages));
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
       alert('Erro ao gerar PDF. Tente novamente.');
@@ -184,6 +185,7 @@ const FormsViewer: React.FC = () => {
       const matchesSearch = !searchTerm ||
         form.templateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         form.motorista?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        form.telefone?.includes(searchTerm) ||
         form.filial?.toLowerCase().includes(searchTerm.toLowerCase());
 
       return matchesTemplate && matchesBranch && matchesSearch;
@@ -245,7 +247,7 @@ const FormsViewer: React.FC = () => {
               type="search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Modelo, pessoa ou filial"
+              placeholder="Modelo, pessoa, telefone ou filial"
             />
 
             {/* Celular: modelo e filial ficam num bloco colapsável; a partir de md entram na mesma grade */}
@@ -329,6 +331,12 @@ const FormsViewer: React.FC = () => {
                           <span className="flex min-w-0 max-w-full items-start gap-1">
                             <Icon name="user" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                             <span className="min-w-0 break-words">{form.motorista}</span>
+                          </span>
+                        )}
+                        {form.telefone && (
+                          <span className="flex min-w-0 max-w-full items-start gap-1">
+                            <Icon name="phone" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <span className="min-w-0 break-words">{form.telefone}</span>
                           </span>
                         )}
                         {form.filial && (
