@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
-import type { Evaluation, EvaluationGrading, EvaluationTemplate } from '../types';
+import type { Evaluation, EvaluationGrading, EvaluationTemplate, HeaderSubject } from '../types';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
+import { formatHeaderValue, getEvaluationSubject } from '../utils/headerUtils';
 import { isTrustedImageUrl } from '../utils/imageUtils';
 import { getTemplates } from './firebaseService';
 
@@ -18,13 +19,17 @@ export interface EvaluationPdfResult {
 export const describeMissingPdfImages = (count: number): string =>
   `PDF gerado, mas ${count === 1 ? '1 imagem das perguntas não pôde' : `${count} imagens das perguntas não puderam`} ser incluída${count === 1 ? '' : 's'}. Avise o TI.`;
 
-// Tipo do relatório, deduzido dos dados da avaliação: telefone = candidato, nomeColaborador = RH
+// Tipo do relatório: vem do snapshot do cabeçalho ou, nas avaliações antigas, dos dados gravados
 type ReportKind = 'driver' | 'rh' | 'candidate';
 
-const getReportKind = (evaluation: Evaluation): ReportKind => {
-  if (evaluation.telefone) return 'candidate';
-  return evaluation.nomeColaborador ? 'rh' : 'driver';
+const REPORT_KIND_BY_SUBJECT: Record<HeaderSubject, ReportKind> = {
+  driver: 'driver',
+  employee: 'rh',
+  candidate: 'candidate',
 };
+
+const getReportKind = (evaluation: Evaluation): ReportKind =>
+  REPORT_KIND_BY_SUBJECT[getEvaluationSubject(evaluation)];
 
 const REPORT_TITLES: Record<ReportKind, string> = {
   driver: 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA',
@@ -239,29 +244,35 @@ export class PDFService {
       ],
     };
 
-    infoByKind[reportKind].forEach(info => {
+    // Avaliações com snapshot listam os campos do cabeçalho como foram preenchidos
+    const headerInfo = evaluation.headerSnapshot
+      ? [
+          ...evaluation.headerSnapshot.fields.map(field => ({
+            label: `${field.label}:`,
+            value: formatHeaderValue(field.type, field.value),
+          })),
+          { label: 'Modelo:', value: evaluation.templateName },
+        ]
+      : infoByKind[reportKind];
+
+    // Todos os valores quebram linha (campos livres do cabeçalho podem ser longos) e trocam de página se preciso
+    const valueWidth = contentWidth - 60; // Espaço disponível após o label
+    headerInfo.forEach(info => {
+      const valueLines = this.splitTextToFit(info.value, valueWidth);
+      if (yPosition + valueLines.length * 6 > pageHeight - 30) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+
       pdf.setFont('helvetica', 'bold');
       pdf.text(info.label, margin, yPosition);
       pdf.setFont('helvetica', 'normal');
-      
-      // Ajuste especial para labels longos - quebra de linha se necessário
-      if (info.label === 'Modelo de Avaliação:' || info.label === 'Modelo:') {
-        const maxWidth = contentWidth - 60; // Espaço disponível após o label
-        const valueLines = this.splitTextToFit(info.value, maxWidth);
-        
-        if (valueLines.length > 1) {
-          // Se precisa de múltiplas linhas, ajusta o espaçamento
-          pdf.text(valueLines[0], margin + 60, yPosition);
+
+      if (valueLines.length > 1) {
+        valueLines.forEach(line => {
+          pdf.text(line, margin + 60, yPosition);
           yPosition += 6;
-          
-          for (let i = 1; i < valueLines.length; i++) {
-            pdf.text(valueLines[i], margin + 60, yPosition);
-            yPosition += 6;
-          }
-        } else {
-          pdf.text(info.value, margin + 60, yPosition);
-          yPosition += 8;
-        }
+        });
       } else {
         pdf.text(info.value, margin + 60, yPosition);
         yPosition += 8;

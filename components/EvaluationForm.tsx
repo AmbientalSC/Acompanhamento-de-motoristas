@@ -1,18 +1,26 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import Icon from './ui/Icon';
-import type { Evaluation, EvaluationTemplate } from '../types';
+import type { Evaluation, EvaluationHeader, EvaluationTemplate } from '../types';
 import { saveEvaluation, getTemplates, getBranches } from '../services/firebaseService';
+import { getHeaders } from '../services/headerService';
 import { PDFService, describeMissingPdfImages } from '../services/pdfService';
 import { gradeEvaluation } from '../utils/gradingUtils';
-import { normalizePersonName } from '../utils/nameUtils';
-import { applyPhoneMask } from '../utils/mn10FieldUtils';
+import { FORM_PLACEHOLDER_MARK } from '../utils/nameUtils';
+import {
+  SUBJECT_LABELS,
+  buildHeaderPayload,
+  getInitialHeaderValues,
+  getTemplateHeaderId,
+  headerComputesAverage,
+  resolveTemplateHeader,
+} from '../utils/headerUtils';
 import RatingSlider from './RatingSlider';
 import DynamicField from './ui/DynamicField';
 import EvaluationResult from './EvaluationResult';
+import HeaderFormFields from './headers/HeaderFormFields';
 import Card from './ui/Card';
 import Button from './ui/Button';
-import Input from './ui/Input';
 import Textarea from './ui/Textarea';
 import Select from './ui/Select';
 
@@ -35,18 +43,9 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'te
     telefone: '',
 });
 
-// Telefone com DDD no formato da máscara de `applyPhoneMask`: (48)999999999 ou (48)99999999
-const PHONE_PATTERN = '\\(\\d{2}\\)\\d{8,9}';
-
 const isRatingType = (type: string | undefined): boolean => type === 'rating' || type === 'rating-5';
 
-// Avaliação e RH sempre calculam média geral; candidato só quando o modelo tem campos de nota
-// (teste de volante sim, teste de placa não); formulário sem cabeçalho nunca.
-const hasAverageHeader = (template: EvaluationTemplate | null | undefined): boolean => {
-  if (template?.headerType === 'evaluation' || template?.headerType === 'rh') return true;
-  if (template?.headerType !== 'candidate') return false;
-  return (template.criteriaConfig ?? []).some(c => isRatingType(c.type));
-};
+const MISSING_HEADER_MESSAGE = 'Não foi possível carregar o cabeçalho deste modelo. Recarregue a página ou peça a um administrador para revisar o modelo.';
 
 // Campos de nota obrigatórios que ficaram sem resposta (chave = id do critério)
 const getMissingRatingErrors = (
@@ -77,8 +76,12 @@ const EvaluationForm: React.FC = () => {
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
   const [branches, setBranches] = useState<string[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
+  const [headers, setHeaders] = useState<EvaluationHeader[]>([]);
+  const [isLoadingHeaders, setIsLoadingHeaders] = useState(true);
 
   const [formData, setFormData] = useState(getInitialState());
+  // Valores do cabeçalho (chave = id do campo do cabeçalho)
+  const [headerValues, setHeaderValues] = useState<Record<string, string>>({});
   const [scores, setScores] = useState<Record<string, number>>({});
   const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,15 +124,36 @@ const EvaluationForm: React.FC = () => {
       }
     };
 
+    // Sem acesso à coleção (ex.: regras ainda não publicadas), `resolveTemplateHeader` usa os cabeçalhos padrão
+    const loadHeaders = async () => {
+      try {
+        setHeaders(await getHeaders());
+      } catch (error) {
+        console.error("Falha ao carregar cabeçalhos:", error);
+      } finally {
+        setIsLoadingHeaders(false);
+      }
+    };
+
     loadTemplates();
     loadBranches();
+    loadHeaders();
   }, []);
+
+  const selectedHeader = useMemo(
+    () => resolveTemplateHeader(selectedTemplate, headers),
+    [selectedTemplate, headers]
+  );
+  // O modelo aponta para um cabeçalho que não foi carregado (excluído ou falha de leitura):
+  // enviar sem ele gravaria a avaliação sem identificação, então o envio fica bloqueado
+  const isHeaderMissing = !!selectedTemplate && !!getTemplateHeaderId(selectedTemplate) && !selectedHeader;
 
   const handleTemplateSelection = (templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (template) {
       setSelectedTemplate(template);
-      
+      setHeaderValues(getInitialHeaderValues(resolveTemplateHeader(template, headers)));
+
       if (template.criteriaConfig) {
         // Nova estrutura com tipos de campo. Notas (rating/rating-5) iniciam sem valor:
         // a ausência da chave em `scores` significa "sem nota".
@@ -160,6 +184,10 @@ const EvaluationForm: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleHeaderChange = useCallback((fieldId: string, value: string) => {
+    setHeaderValues(prev => ({ ...prev, [fieldId]: value }));
+  }, []);
+
   const clearError = useCallback((fieldId: string) => {
     setErrors(prev => {
       if (!(fieldId in prev)) return prev;
@@ -188,18 +216,19 @@ const EvaluationForm: React.FC = () => {
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
 
-    // Só modelos com média (ver `hasAverageHeader`) têm averageScore
-    if (!hasAverageHeader(selectedTemplate)) return undefined;
+    // Só cabeçalhos que calculam média, em modelos com campos de nota, têm averageScore
+    if (!headerComputesAverage(selectedHeader, selectedTemplate)) return undefined;
 
     const answeredScores = Object.values(scores);
     if (answeredScores.length === 0) return undefined;
 
     const total = answeredScores.reduce((sum, score) => sum + score, 0);
     return total / answeredScores.length;
-  }, [scores, selectedTemplate]);
+  }, [scores, selectedTemplate, selectedHeader]);
 
   const resetForm = () => {
     setFormData(getInitialState());
+    setHeaderValues({});
     setScores({});
     setFieldValues({});
     setErrors({});
@@ -215,6 +244,11 @@ const EvaluationForm: React.FC = () => {
     if (!selectedTemplate) return;
 
     setSubmitError(null);
+
+    if (isHeaderMissing) {
+      setSubmitError(MISSING_HEADER_MESSAGE);
+      return;
+    }
 
     const missingRatings = getMissingRatingErrors(selectedTemplate, scores);
     const firstMissingId = Object.keys(missingRatings)[0];
@@ -237,37 +271,28 @@ const EvaluationForm: React.FC = () => {
       fieldValuesWithNames[fieldName] = value;
     });
     
-    const hasHeader = selectedTemplate.headerType !== undefined;
-    const isRhHeader = selectedTemplate.headerType === 'rh';
-    const isCandidateHeader = selectedTemplate.headerType === 'candidate';
-
-    // O telefone só é gravado nas avaliações de candidato (o nome do candidato fica em `motorista`)
-    const { telefone, ...formFields } = formData;
+    // O telefone só é gravado quando o cabeçalho tem um campo de telefone
+    const { telefone: _telefone, ...formFields } = formData;
+    // Os papéis do cabeçalho preenchem os campos fixos da avaliação (motorista, filial, data...) e o snapshot guarda tudo
+    const headerPayload = selectedHeader ? buildHeaderPayload(selectedHeader, headerValues) : null;
 
     const evaluationToSave: any = {
         ...formFields,
+        ...headerPayload?.fields,
         scores,
         fieldValues: fieldValuesWithNames,
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
-        motorista: !hasHeader ? 
-                   `Formulário ${selectedTemplate.name}` : 
-                   (isRhHeader ? normalizePersonName(formData.nomeColaborador || '') : normalizePersonName(formData.motorista)),
     };
 
-    if (isRhHeader) {
-      evaluationToSave.nomeColaborador = normalizePersonName(formData.nomeColaborador || '');
-      evaluationToSave.funcao = formData.funcao || '';
-      evaluationToSave.turnoPrincipal = formData.turnoPrincipal || '';
-      evaluationToSave.equipeSetor = formData.equipeSetor || '';
+    if (headerPayload) {
+      evaluationToSave.headerSnapshot = headerPayload.snapshot;
+    } else {
+      evaluationToSave.motorista = `${FORM_PLACEHOLDER_MARK} ${selectedTemplate.name}`;
     }
 
-    if (isCandidateHeader) {
-      evaluationToSave.telefone = (telefone || '').trim();
-    }
-
-    // Só adicionar averageScore se o template incluir cabeçalho E houver notas respondidas
-    if (hasHeader && averageScore !== undefined && averageScore !== null) {
+    // Só adicionar averageScore se o cabeçalho calcular média E houver notas respondidas
+    if (averageScore !== undefined && averageScore !== null) {
       evaluationToSave.averageScore = averageScore;
     }
 
@@ -367,7 +392,7 @@ const EvaluationForm: React.FC = () => {
     );
   };
 
-  if (isLoadingTemplates || isLoadingBranches) {
+  if (isLoadingTemplates || isLoadingBranches || isLoadingHeaders) {
     return (
       <div role="status" aria-live="polite" className="flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 h-64">
         <Icon name="loader-2" className="h-12 w-12 animate-spin text-brand-primary" />
@@ -426,18 +451,19 @@ const EvaluationForm: React.FC = () => {
     );
   }
 
-  const showsAverage = hasAverageHeader(selectedTemplate);
+  const showsAverage = headerComputesAverage(selectedHeader, selectedTemplate);
 
   // Rótulo do botão de envio conforme o tipo do modelo (mantém os textos de cada barra original)
   const submitLabel = showsAverage
     ? 'Salvar Avaliação'
-    : selectedTemplate?.headerType === 'candidate' || selectedTemplate?.includeHeader === false
+    : selectedHeader || selectedTemplate?.includeHeader === false
       ? 'Enviar Formulário'
       : 'Salvar';
 
   // Erro de envio, ou resumo dos campos de nota obrigatórios pendentes (some conforme o usuário responde)
   const pendingRatingCount = Object.keys(errors).length;
   const actionBarError = submitError
+    ?? (isHeaderMissing ? MISSING_HEADER_MESSAGE : null)
     ?? (pendingRatingCount > 0
       ? `Responda ${pendingRatingCount === 1 ? 'o campo de nota obrigatório pendente' : `os ${pendingRatingCount} campos de nota obrigatórios pendentes`} antes de salvar.`
       : null);
@@ -452,98 +478,14 @@ const EvaluationForm: React.FC = () => {
                 Trocar Modelo
             </Button>
         </div>
-        {selectedTemplate?.headerType === 'evaluation' && (
-          <div className="p-4 sm:p-6">
-            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho da Avaliação</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              <Input label="Matrícula" name="matricula" autoComplete="off" value={formData.matricula} onChange={handleInputChange} />
-              <Input label="Motorista" name="motorista" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.motorista} onChange={handleInputChange} required />
-              <Input label="Setor Acompanhado" name="setor" autoComplete="off" value={formData.setor} onChange={handleInputChange} />
-              <Input label="VT (Veículo)" name="vt" autoComplete="off" value={formData.vt} onChange={handleInputChange} required />
-              <Select
-                label="Turno"
-                name="turno"
-                value={formData.turno}
-                onChange={handleInputChange}
-              >
-                <option value="">Selecione o turno</option>
-                <option value="Manhã">Manhã</option>
-                <option value="Tarde">Tarde</option>
-                <option value="Noite">Noite</option>
-              </Select>
-              <Select
-                label="Filial"
-                name="filial"
-                value={formData.filial}
-                onChange={handleInputChange}
-                required
-                disabled={isLoadingBranches}
-              >
-                <option value="">Selecione a filial</option>
-                {sortedBranches.map(branch => (
-                  <option key={branch} value={branch}>{branch}</option>
-                ))}
-              </Select>
-              <Input label="Data do Acompanhamento" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
-            </div>
-          </div>
-        )}
-        {selectedTemplate?.headerType === 'rh' && (
-          <div className="p-4 sm:p-6">
-            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho de RH</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              <Input label="Nome do Colaborador" name="nomeColaborador" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.nomeColaborador || ''} onChange={handleInputChange} required />
-              <Input label="Função" name="funcao" autoComplete="off" value={formData.funcao || ''} onChange={handleInputChange} />
-              <Select
-                label="Turno Principal"
-                name="turnoPrincipal"
-                value={formData.turnoPrincipal || ''}
-                onChange={handleInputChange}
-              >
-                <option value="">Selecione o turno</option>
-                <option value="Manhã">Manhã</option>
-                <option value="Tarde">Tarde</option>
-                <option value="Noite">Noite</option>
-              </Select>
-              <Input label="Equipe/Setor" name="equipeSetor" autoComplete="off" value={formData.equipeSetor || ''} onChange={handleInputChange} />
-              <Select
-                label="Filial"
-                name="filial"
-                value={formData.filial}
-                onChange={handleInputChange}
-                required
-                disabled={isLoadingBranches}
-              >
-                <option value="">Selecione a filial</option>
-                {sortedBranches.map(branch => (
-                  <option key={branch} value={branch}>{branch}</option>
-                ))}
-              </Select>
-              <Input label="Data" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
-            </div>
-          </div>
-        )}
-        {selectedTemplate?.headerType === 'candidate' && (
-          <div className="p-4 sm:p-6">
-            <h3 className="text-lg sm:text-xl font-bold text-brand-dark mb-4 sm:mb-6">Cabeçalho do Candidato</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-              <Input label="Data" name="data" type="date" value={formData.data} onChange={handleInputChange} required />
-              <Input label="Nome do Candidato" name="motorista" autoComplete="off" autoCapitalize="characters" className="uppercase" value={formData.motorista} onChange={handleInputChange} required />
-              <Input
-                label="Telefone"
-                name="telefone"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="(xx)xxxxxxxxx"
-                pattern={PHONE_PATTERN}
-                title="Telefone com DDD, no formato (48)999999999"
-                value={formData.telefone || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, telefone: applyPhoneMask(e.target.value) }))}
-                required
-              />
-            </div>
-          </div>
+        {selectedHeader && (
+          <HeaderFormFields
+            header={selectedHeader}
+            values={headerValues}
+            onChange={handleHeaderChange}
+            branches={sortedBranches}
+            isLoadingBranches={isLoadingBranches}
+          />
         )}
       </Card>
       
@@ -614,11 +556,7 @@ const EvaluationForm: React.FC = () => {
               <span className="text-sm sm:text-lg font-medium text-gray-600">
                 <span className="sm:hidden">Média geral:</span>
                 <span className="hidden sm:inline">
-                  {selectedTemplate?.headerType === 'rh'
-                    ? 'Média Geral do Colaborador:'
-                    : selectedTemplate?.headerType === 'candidate'
-                      ? 'Média Geral do Candidato:'
-                      : 'Média Geral do Motorista:'}
+                  Média Geral do {SUBJECT_LABELS[selectedHeader?.subject ?? 'driver']}:
                 </span>
               </span>
               {renderAverageStatus()}
@@ -631,7 +569,7 @@ const EvaluationForm: React.FC = () => {
               <Icon name="rotate" className="h-4 w-4" />
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSaving} className="flex-1 sm:flex-none">
+            <Button type="submit" disabled={isSaving || isHeaderMissing} className="flex-1 sm:flex-none">
               {isSaving ? <Icon name="loader-2" className="h-4 w-4 animate-spin" /> : <Icon name="device-floppy" className="h-4 w-4" />}
               {isSaving ? 'Salvando...' : submitLabel}
             </Button>

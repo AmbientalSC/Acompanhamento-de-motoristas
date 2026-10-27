@@ -32,6 +32,7 @@ export const ICON_NAMES = [
   'file-text',
   'filter',
   'grip-vertical',
+  'id',
   'info-circle',
   'layout-dashboard',
   'link',

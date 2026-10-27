@@ -47,6 +47,7 @@ const ICONS = [
   'file-text',
   'filter',
   'grip-vertical',
+  'id',
   'info-circle',
   'layout-dashboard',
   'link',

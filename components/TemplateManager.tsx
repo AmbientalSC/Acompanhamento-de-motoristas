@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Icon from './ui/Icon';
 import type { IconName } from './ui/iconNames';
-import type { EvaluationTemplate, EvaluationCriterion, FieldType, RadioOption, User } from '../types';
+import type { EvaluationHeader, EvaluationTemplate, EvaluationCriterion, FieldType, RadioOption, User } from '../types';
 import { getTemplates, saveTemplate, updateTemplate, deleteTemplate, getBranches, saveBranch, deleteBranch, getUsers, saveUser, updateUser, deleteUser } from '../services/firebaseService';
 import { deleteTemplateImage, uploadTemplateImage, validateTemplateImage } from '../services/templateImageService';
 import { supportsAnswerKey } from '../utils/gradingUtils';
+import { DEFAULT_HEADERS, getTemplateHeaderId, isDefaultHeaderId, resolveTemplateHeader, withDefaultHeaders } from '../utils/headerUtils';
+import { getHeaders } from '../services/headerService';
 import { useAuth } from '../contexts/AuthContext';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -14,9 +16,12 @@ import Checkbox from './ui/Checkbox';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { FIELD_CLASSES } from './ui/fieldStyles';
 import CriterionEditor from './templates/CriterionEditor';
+import HeaderSelector from './templates/HeaderSelector';
+import HeaderManager from './headers/HeaderManager';
+import FormActionBar from './ui/FormActionBar';
 import { exampleTemplates } from '../data/exampleTemplates';
 
-type SubTab = 'models' | 'branches' | 'users' | 'forms';
+type SubTab = 'models' | 'headers' | 'branches' | 'users' | 'forms';
 
 // Confirmação pendente (substitui window.confirm): a ação roda ao confirmar e o diálogo mostra o carregamento.
 interface ConfirmRequest {
@@ -89,13 +94,10 @@ const RowActions: React.FC<RowActionsProps> = ({ onEdit, onDelete, itemLabel }) 
   </div>
 );
 
-// Tipo do modelo: `headerType` tem prioridade; `includeHeader` é o campo legado (sem nenhum dos dois = formulário)
-const TemplateKindBadge: React.FC<{ template: EvaluationTemplate }> = ({ template }) => {
-  if (template.headerType === 'evaluation') return <Badge tone="green">Avaliação</Badge>;
-  if (template.headerType === 'rh') return <Badge tone="brand">RH</Badge>;
-  if (template.headerType === 'candidate') return <Badge tone="brand">Candidato</Badge>;
-  if (template.includeHeader === true) return <Badge tone="green">Avaliação</Badge>;
-  return <Badge tone="neutral">Formulário</Badge>;
+// Tipo do modelo: nome do cabeçalho resolvido (verde quando calcula média); sem cabeçalho = formulário
+const TemplateKindBadge: React.FC<{ header: EvaluationHeader | null }> = ({ header }) => {
+  if (!header) return <Badge tone="neutral">Formulário</Badge>;
+  return <Badge tone={header.computesAverage ? 'green' : 'brand'}>{header.name}</Badge>;
 };
 
 const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -130,29 +132,6 @@ const CriteriaChips: React.FC<{ template: EvaluationTemplate; showType?: boolean
             <span className="truncate max-w-[9.5rem]">{criterion}</span>
           </span>
         ))}
-  </div>
-);
-
-interface FormActionBarProps {
-  isEditing: boolean;
-  isSaving: boolean;
-  saveLabel: string;
-  onCancel: () => void;
-}
-
-// Barra de ações do formulário: fixa acima da navegação inferior no celular, comum a partir de `sm`.
-// O -mx/-mb compensa o padding do <form> (p-4) para a barra encostar nas bordas do cartão.
-const FormActionBar: React.FC<FormActionBarProps> = ({ isEditing, isSaving, saveLabel, onCancel }) => (
-  <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 -mx-4 -mb-4 flex gap-2 rounded-b-lg border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:static sm:z-auto sm:mx-0 sm:mb-0 sm:justify-end sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
-    {isEditing && (
-      <Button type="button" onClick={onCancel} variant="secondary" className="flex-1 sm:flex-none">
-        Cancelar<span className="hidden sm:inline">&nbsp;edição</span>
-      </Button>
-    )}
-    <Button type="submit" disabled={isSaving} className={isEditing ? 'flex-[2] sm:flex-none' : 'w-full sm:w-auto'}>
-      {isSaving ? <Icon name="loader-2" className="h-5 w-5 animate-spin" /> : <Icon name="device-floppy" className="h-5 w-5" />}
-      {isSaving ? 'Salvando...' : saveLabel}
-    </Button>
   </div>
 );
 
@@ -228,7 +207,10 @@ const TemplateManager: React.FC = () => {
     required: false, 
     type: 'rating' 
   }]);
-  const [headerType, setHeaderType] = useState<EvaluationTemplate['headerType']>('evaluation');
+  // '' = sem cabeçalho
+  const [selectedHeaderId, setSelectedHeaderId] = useState<string>('evaluation');
+  // Começa com os padrão: se a coleção não puder ser lida, os modelos continuam editáveis
+  const [headers, setHeaders] = useState<EvaluationHeader[]>(DEFAULT_HEADERS);
   const [includeFinalConsiderations, setIncludeFinalConsiderations] = useState(true);
   const [pendingImages, setPendingImages] = useState<Record<string, PendingImage>>({});
   const pendingImagesRef = useRef(pendingImages);
@@ -273,6 +255,7 @@ const TemplateManager: React.FC = () => {
   useEffect(() => {
     if (activeSubTab === 'models' || activeSubTab === 'forms') {
       loadTemplates();
+      loadHeaders();
     } else if (activeSubTab === 'branches') {
       loadBranches();
     } else if (activeSubTab === 'users') {
@@ -300,6 +283,14 @@ const TemplateManager: React.FC = () => {
     const fetchedTemplates = await getTemplates();
     setTemplates(fetchedTemplates);
     setIsLoading(false);
+  };
+
+  const loadHeaders = async () => {
+    try {
+      setHeaders(withDefaultHeaders(await getHeaders()));
+    } catch (error) {
+      console.error('Erro ao carregar cabeçalhos:', error);
+    }
   };
 
   const loadBranches = async () => {
@@ -464,7 +455,7 @@ const TemplateManager: React.FC = () => {
       required: false, 
       type: 'rating' 
     }]);
-    setHeaderType('evaluation');
+    setSelectedHeaderId('evaluation');
     setIncludeFinalConsiderations(true);
   };
 
@@ -474,15 +465,8 @@ const TemplateManager: React.FC = () => {
     setEditingTemplateId(template.id);
     setTemplateName(template.name);
     
-    // Carregar configurações do template
-    // Deriva headerType: novo campo tem prioridade, senão usa includeHeader como fallback
-    if (template.headerType) {
-      setHeaderType(template.headerType);
-    } else if (template.includeHeader === false) {
-      setHeaderType(undefined);
-    } else {
-      setHeaderType('evaluation');
-    }
+    // Carregar configurações do template (`headerId`, ou o `headerType` legado; sem nenhum = sem cabeçalho)
+    setSelectedHeaderId(getTemplateHeaderId(template) ?? '');
     setIncludeFinalConsiderations(template.includeFinalConsiderations === true);
     
     // Converter criteria antigas para nova estrutura se necessário
@@ -572,8 +556,15 @@ const TemplateManager: React.FC = () => {
       return;
     }
 
+    const selectedHeader = headers.find(header => header.id === selectedHeaderId) ?? null;
+    // Cabeçalho escolhido que não está na lista (excluído ou falha de leitura): salvar apagaria o cabeçalho do modelo
+    if (selectedHeaderId && !selectedHeader) {
+      alert('O cabeçalho deste modelo não foi encontrado. Escolha um cabeçalho da lista antes de salvar.');
+      return;
+    }
+
     setIsSaving(true);
-    const hasHeader = headerType !== undefined;
+    const hasHeader = selectedHeader !== null;
     const uploadedPaths: string[] = [];
 
     try {
@@ -617,10 +608,13 @@ const TemplateManager: React.FC = () => {
           };
         }).filter(c => c.name),
         includeHeader: hasHeader,
-        headerType,
+        headerId: selectedHeader?.id,
+        // Espelho legado para os cabeçalhos padrão (lido por versões antigas do app ainda em cache)
+        headerType: selectedHeader && isDefaultHeaderId(selectedHeader.id)
+          ? selectedHeader.id as EvaluationTemplate['headerType']
+          : undefined,
         includeFinalConsiderations,
-        // Candidato tem cabeçalho (nome/telefone) mas, como o formulário sem cabeçalho, não calcula média
-        isFormOnly: !hasHeader || headerType === 'candidate',
+        isFormOnly: !selectedHeader?.computesAverage,
       };
 
       const previousImagePaths = (templates.find(t => t.id === editingTemplateId)?.criteriaConfig || [])
@@ -842,10 +836,11 @@ const TemplateManager: React.FC = () => {
     handleEdit(template);
   };
 
-  const simpleForms = templates.filter(t => !t.headerType && t.includeHeader === false);
+  const simpleForms = templates.filter(t => !getTemplateHeaderId(t) && t.includeHeader === false);
 
   const subTabs: Array<{ tab: SubTab; label: string; icon: IconName }> = [
     { tab: 'models', label: 'Modelos', icon: 'clipboard-list' },
+    { tab: 'headers', label: 'Cabeçalhos', icon: 'id' },
     { tab: 'forms', label: 'Formulários', icon: 'file-text' },
     { tab: 'branches', label: 'Filiais', icon: 'building' },
     ...(canManageSystem ? [{ tab: 'users' as const, label: 'Usuários', icon: 'users' as const }] : []),
@@ -863,7 +858,7 @@ const TemplateManager: React.FC = () => {
           role="tablist"
           aria-label="Seções de gerenciamento"
           className={`grid gap-1 rounded-brand bg-brand-gray p-1 lg:flex lg:w-auto ${
-            subTabs.length === 4 ? 'grid-cols-4' : 'grid-cols-3'
+            subTabs.length === 5 ? 'grid-cols-5' : 'grid-cols-4'
           }`}
         >
           {subTabs.map(({ tab, label, icon }) => (
@@ -903,87 +898,7 @@ const TemplateManager: React.FC = () => {
               <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
                 <h3 className="text-lg font-semibold text-brand-dark mb-3">Configurações do Formulário</h3>
                 <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Cabeçalho</p>
-                    <div className="space-y-2">
-                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
-                        headerType === undefined
-                          ? 'border-brand-primary bg-brand-light'
-                          : 'border-gray-200 hover:bg-gray-100'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="headerType"
-                          checked={headerType === undefined}
-                          onChange={() => setHeaderType(undefined)}
-                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
-                        />
-                        <div className="ml-3 min-w-0">
-                          <span className="text-sm font-medium text-gray-700">Sem cabeçalho</span>
-                          <span className="block text-xs text-gray-500">
-                            Apenas os campos do formulário, sem dados de identificação. Ideal para pesquisas e formulários simples.
-                          </span>
-                        </div>
-                      </label>
-                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
-                        headerType === 'evaluation'
-                          ? 'border-brand-primary bg-brand-light'
-                          : 'border-gray-200 hover:bg-gray-100'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="headerType"
-                          checked={headerType === 'evaluation'}
-                          onChange={() => setHeaderType('evaluation')}
-                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
-                        />
-                        <div className="ml-3 min-w-0">
-                          <span className="text-sm font-medium text-gray-700">Cabeçalho de Avaliação</span>
-                          <span className="block text-xs text-gray-500">
-                            Campos: Matrícula, Motorista, Setor, Turno, Filial, VT, Data e Média Geral.
-                          </span>
-                        </div>
-                      </label>
-                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
-                        headerType === 'rh'
-                          ? 'border-brand-primary bg-brand-light'
-                          : 'border-gray-200 hover:bg-gray-100'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="headerType"
-                          checked={headerType === 'rh'}
-                          onChange={() => setHeaderType('rh')}
-                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
-                        />
-                        <div className="ml-3 min-w-0">
-                          <span className="text-sm font-medium text-gray-700">Cabeçalho de RH</span>
-                          <span className="block text-xs text-gray-500">
-                            Campos: Nome do Colaborador, Função, Turno Principal, Equipe/Setor, Filial, Data e Média Geral.
-                          </span>
-                        </div>
-                      </label>
-                      <label className={`flex items-start p-3 min-h-11 rounded-brand border cursor-pointer transition-colors ${
-                        headerType === 'candidate'
-                          ? 'border-brand-primary bg-brand-light'
-                          : 'border-gray-200 hover:bg-gray-100'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="headerType"
-                          checked={headerType === 'candidate'}
-                          onChange={() => setHeaderType('candidate')}
-                          className="mt-0.5 h-5 w-5 flex-shrink-0 accent-brand-primary"
-                        />
-                        <div className="ml-3 min-w-0">
-                          <span className="text-sm font-medium text-gray-700">Cabeçalho de Candidato</span>
-                          <span className="block text-xs text-gray-500">
-                            Campos: Data, Nome e Telefone do candidato. Sem média geral. Ideal para testes de volante e de placa.
-                          </span>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
+                  <HeaderSelector headers={headers} value={selectedHeaderId} onChange={setSelectedHeaderId} />
 
                   <Checkbox
                     label="Incluir campo de considerações finais"
@@ -1063,7 +978,7 @@ const TemplateManager: React.FC = () => {
                         <div className="min-w-0 flex-grow">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <p className="min-w-0 break-words font-semibold text-brand-dark">{template.name}</p>
-                            <TemplateKindBadge template={template} />
+                            <TemplateKindBadge header={resolveTemplateHeader(template, headers)} />
                           </div>
                           <CriteriaChips template={template} />
                         </div>
@@ -1083,6 +998,9 @@ const TemplateManager: React.FC = () => {
           </Card>
         </div>
       )}
+
+      {/* Conteúdo da aba Cabeçalhos */}
+      {activeSubTab === 'headers' && <HeaderManager />}
 
       {/* Conteúdo da aba Filiais */}
       {activeSubTab === 'branches' && (

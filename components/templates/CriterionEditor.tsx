@@ -1,9 +1,9 @@
 import React from 'react';
 import Icon from '../ui/Icon';
-import type { IconName } from '../ui/iconNames';
 import type { EvaluationCriterion, FieldType } from '../../types';
 import { TEMPLATE_IMAGE_ACCEPTED_TYPES, TEMPLATE_IMAGE_MAX_SIZE_MB } from '../../services/templateImageService';
 import { supportsAnswerKey } from '../../utils/gradingUtils';
+import ActionIconButton from '../ui/ActionIconButton';
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import Input from '../ui/Input';
@@ -27,33 +27,6 @@ export interface CriterionEditorProps {
 }
 
 const hasOptions = (type: FieldType | undefined): boolean => type === 'radio' || type === 'number';
-
-interface ActionIconButtonProps {
-  icon: IconName;
-  label: string;
-  tone?: 'neutral' | 'danger';
-  disabled?: boolean;
-  onClick: () => void;
-}
-
-// Botão só de ícone: alvo de 44px no celular, aria-label + title para leitores de tela e dica ao segurar.
-const ACTION_TONES: Record<NonNullable<ActionIconButtonProps['tone']>, string> = {
-  neutral: 'bg-brand-gray text-brand-primary hover:bg-brand-light',
-  danger: 'bg-red-100 text-red-700 hover:bg-red-200',
-};
-
-const ActionIconButton: React.FC<ActionIconButtonProps> = ({ icon, label, tone = 'neutral', disabled, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    aria-label={label}
-    title={label}
-    className={`inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-brand transition-colors sm:h-9 sm:w-9 ${ACTION_TONES[tone]} focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary disabled:cursor-not-allowed disabled:opacity-40`}
-  >
-    <Icon name={icon} className="h-5 w-5" />
-  </button>
-);
 
 const CriterionEditor: React.FC<CriterionEditorProps> = ({
   criterion,

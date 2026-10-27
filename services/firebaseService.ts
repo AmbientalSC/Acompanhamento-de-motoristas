@@ -33,6 +33,7 @@ export const getTemplates = async (): Promise<EvaluationTemplate[]> => {
         criteria: data.criteria || [], // Compatibilidade com dados antigos
         criteriaConfig: data.criteriaConfig || undefined, // Nova estrutura
         includeHeader: data.includeHeader ?? undefined,
+        headerId: data.headerId ?? undefined,
         headerType: data.headerType ?? undefined,
         includeFinalConsiderations: data.includeFinalConsiderations ?? undefined,
         isFormOnly: data.isFormOnly ?? undefined,
@@ -53,6 +54,7 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
       criteria: templateData.criteria || [], // Compatibilidade
       // Firestore rejeita `undefined`; null é normalizado de volta para undefined em getTemplates
       includeHeader: templateData.includeHeader ?? null,
+      headerId: templateData.headerId ?? null,
       headerType: templateData.headerType ?? null,
       includeFinalConsiderations: templateData.includeFinalConsiderations ?? null,
       isFormOnly: templateData.isFormOnly ?? null,
@@ -72,6 +74,7 @@ export const saveTemplate = async (templateData: Omit<EvaluationTemplate, 'id'>)
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
       includeHeader: templateData.includeHeader,
+      headerId: templateData.headerId,
       headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
       isFormOnly: templateData.isFormOnly,
@@ -91,6 +94,7 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
       criteria: templateData.criteria || [], // Compatibilidade
       // Firestore rejeita `undefined`; null é normalizado de volta para undefined em getTemplates
       includeHeader: templateData.includeHeader ?? null,
+      headerId: templateData.headerId ?? null,
       headerType: templateData.headerType ?? null,
       includeFinalConsiderations: templateData.includeFinalConsiderations ?? null,
       isFormOnly: templateData.isFormOnly ?? null,
@@ -110,6 +114,7 @@ export const updateTemplate = async (templateId: string, templateData: Omit<Eval
       criteria: templateData.criteria || [],
       criteriaConfig: templateData.criteriaConfig,
       includeHeader: templateData.includeHeader,
+      headerId: templateData.headerId,
       headerType: templateData.headerType,
       includeFinalConsiderations: templateData.includeFinalConsiderations,
       isFormOnly: templateData.isFormOnly,
@@ -152,11 +157,11 @@ export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'ti
   }
 };
 
-// Testes de candidato (com telefone) gravados antes de esse cabeçalho calcular média ficaram sem
-// `averageScore`: deriva a média das notas gravadas para que entrem na Análise por Motorista.
+// Testes de candidato (com telefone e sem snapshot do cabeçalho) gravados antes de esse cabeçalho calcular
+// média ficaram sem `averageScore`: deriva a média das notas gravadas para que entrem na Análise por Motorista.
 const resolveAverageScore = (data: DocumentData): number | undefined => {
   if (typeof data.averageScore === 'number') return data.averageScore;
-  if (!data.telefone) return data.averageScore ?? undefined;
+  if (!data.telefone || data.headerSnapshot) return data.averageScore ?? undefined;
 
   const answered = Object.values(data.scores ?? {}).filter((v): v is number => typeof v === 'number');
   if (answered.length === 0) return undefined;
@@ -194,6 +199,7 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         turnoPrincipal: data.turnoPrincipal,
         equipeSetor: data.equipeSetor,
         telefone: data.telefone,
+        headerSnapshot: data.headerSnapshot ?? undefined,
         grading: data.grading,
         pros: data.pros,
         contras: data.contras,

@@ -6,6 +6,7 @@ import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import { PDFService } from '../services/pdfService';
 import { getEvaluationStatus } from '../utils/evaluationUtils';
+import { SUBJECT_LABELS, formatHeaderValue, getEvaluationSubject } from '../utils/headerUtils';
 import Card from './ui/Card';
 import SearchableSelect from './ui/SearchableSelect';
 import Button from './ui/Button';
@@ -203,14 +204,10 @@ const DriverDashboard: React.FC = () => {
     return criterionId;
   };
 
-  const selectedTemplate = useMemo(() => {
-    if (!selectedEvaluation) return undefined;
-    return templates.find(t => t.id === selectedEvaluation.templateId);
-  }, [selectedEvaluation, templates]);
-
-  const isRhEval = selectedTemplate?.headerType === 'rh';
-  // Como no PDF, o candidato é reconhecido pelo telefone (só esse cabeçalho o grava)
-  const isCandidateEval = !!selectedEvaluation?.telefone;
+  // Avaliações novas trazem o snapshot do cabeçalho; nas antigas o tipo é deduzido dos campos gravados
+  const subject = selectedEvaluation ? getEvaluationSubject(selectedEvaluation) : 'driver';
+  const isRhEval = subject === 'employee';
+  const isCandidateEval = subject === 'candidate';
 
   const summaryChartData = useMemo(() => {
     if (!selectedEvaluation?.scores) return [];
@@ -461,30 +458,42 @@ const DriverDashboard: React.FC = () => {
                   <div className="mb-6 bg-gray-50 p-3 sm:p-4 rounded-lg">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Informações da Avaliação</h4>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                      <InfoItem
-                        label={isRhEval ? 'Colaborador:' : isCandidateEval ? 'Candidato:' : 'Motorista:'}
-                        value={selectedEvaluation.motorista}
-                      />
-                      {isCandidateEval ? (
-                        <InfoItem label="Telefone:" value={selectedEvaluation.telefone} />
-                      ) : (
-                        <InfoItem label="Filial:" value={selectedEvaluation.filial} />
-                      )}
-                      {isCandidateEval ? null : isRhEval ? (
-                        <>
-                          <InfoItem label="Função:" value={selectedEvaluation.funcao || '-'} />
-                          <InfoItem label="Turno Principal:" value={selectedEvaluation.turnoPrincipal || '-'} />
-                          <InfoItem label="Equipe/Setor:" value={selectedEvaluation.equipeSetor || '-'} />
-                        </>
+                      {selectedEvaluation.headerSnapshot ? (
+                        selectedEvaluation.headerSnapshot.fields.map(field => (
+                          <InfoItem
+                            key={field.id}
+                            label={`${field.label}:`}
+                            value={formatHeaderValue(field.type, field.value) || '-'}
+                          />
+                        ))
                       ) : (
                         <>
-                          <InfoItem label="Turno:" value={selectedEvaluation.turno} />
-                          <InfoItem label="Setor:" value={selectedEvaluation.setor} />
-                          {selectedEvaluation.matricula && (
-                            <InfoItem label="Matrícula:" value={selectedEvaluation.matricula} />
+                          <InfoItem
+                            label={`${SUBJECT_LABELS[subject]}:`}
+                            value={selectedEvaluation.motorista}
+                          />
+                          {isCandidateEval ? (
+                            <InfoItem label="Telefone:" value={selectedEvaluation.telefone} />
+                          ) : (
+                            <InfoItem label="Filial:" value={selectedEvaluation.filial} />
                           )}
-                          {selectedEvaluation.vt && (
-                            <InfoItem label="Viatura:" value={selectedEvaluation.vt} />
+                          {isCandidateEval ? null : isRhEval ? (
+                            <>
+                              <InfoItem label="Função:" value={selectedEvaluation.funcao || '-'} />
+                              <InfoItem label="Turno Principal:" value={selectedEvaluation.turnoPrincipal || '-'} />
+                              <InfoItem label="Equipe/Setor:" value={selectedEvaluation.equipeSetor || '-'} />
+                            </>
+                          ) : (
+                            <>
+                              <InfoItem label="Turno:" value={selectedEvaluation.turno} />
+                              <InfoItem label="Setor:" value={selectedEvaluation.setor} />
+                              {selectedEvaluation.matricula && (
+                                <InfoItem label="Matrícula:" value={selectedEvaluation.matricula} />
+                              )}
+                              {selectedEvaluation.vt && (
+                                <InfoItem label="Viatura:" value={selectedEvaluation.vt} />
+                              )}
+                            </>
                           )}
                         </>
                       )}

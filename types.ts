@@ -57,6 +57,53 @@ export interface User {
   updatedAt?: number;
 }
 
+// Quem é identificado pelo cabeçalho: define os rótulos ("Motorista", "Colaborador", "Candidato") e o título do PDF
+export type HeaderSubject = 'driver' | 'employee' | 'candidate';
+
+// Papel de um campo do cabeçalho: os papéis fixos alimentam os campos da avaliação usados pelos
+// dashboards e pelo PDF (ex.: `branch` → `filial`); `custom` fica só no snapshot do cabeçalho.
+export type HeaderFieldRole =
+  | 'person'
+  | 'date'
+  | 'branch'
+  | 'shift'
+  | 'vehicle'
+  | 'registration'
+  | 'sector'
+  | 'function'
+  | 'team'
+  | 'phone'
+  | 'custom';
+
+// `branch` = lista das filiais cadastradas; `select` = opções do próprio campo
+export type HeaderFieldType = 'text' | 'number' | 'date' | 'phone' | 'select' | 'branch';
+
+export interface HeaderField {
+  id: string;
+  label: string;
+  role: HeaderFieldRole;
+  type: HeaderFieldType; // definido pelo papel; só é escolhido livremente em `custom`
+  options: string[]; // usado apenas pelo tipo `select`
+  required: boolean;
+}
+
+// Cabeçalho reutilizável, criado pelos administradores (coleção `headers`)
+export interface EvaluationHeader {
+  id: string;
+  name: string;
+  subject: HeaderSubject;
+  computesAverage: boolean; // calcula média geral quando o modelo tem campos de nota
+  fields: HeaderField[];
+}
+
+// Cópia do cabeçalho preenchido, gravada na avaliação (editar o cabeçalho depois não altera avaliações antigas)
+export interface EvaluationHeaderSnapshot {
+  headerId: string;
+  name: string;
+  subject: HeaderSubject;
+  fields: Array<Pick<HeaderField, 'id' | 'label' | 'role' | 'type'> & { value: string }>;
+}
+
 // Representa um modelo de formulário de avaliação customizável.
 export interface EvaluationTemplate {
   id: string;
@@ -64,7 +111,8 @@ export interface EvaluationTemplate {
   criteria: string[]; // Mantido para compatibilidade com dados existentes
   criteriaConfig?: EvaluationCriterion[]; // Nova estrutura com configurações
   includeHeader?: boolean; // Se deve incluir cabeçalho de avaliação (motorista, filial, etc)
-  headerType?: 'evaluation' | 'rh' | 'candidate'; // Tipo de cabeçalho (avaliação, RH ou candidato: só data, nome e telefone)
+  headerId?: string; // Cabeçalho da coleção `headers` (tem prioridade sobre `headerType`)
+  headerType?: 'evaluation' | 'rh' | 'candidate'; // Legado: id de um dos cabeçalhos padrão
   includeFinalConsiderations?: boolean; // Se deve incluir campo de considerações finais
   isFormOnly?: boolean; // Se é apenas um formulário (sem avaliação)
 }
@@ -91,6 +139,7 @@ export interface Evaluation {
   turnoPrincipal?: string; // Turno principal (cabeçalho RH)
   equipeSetor?: string; // Equipe/setor (cabeçalho RH)
   telefone?: string; // Telefone do candidato (cabeçalho de candidato; o nome fica em `motorista`)
+  headerSnapshot?: EvaluationHeaderSnapshot; // Ausente nas avaliações gravadas antes dos cabeçalhos editáveis
   grading?: EvaluationGrading; // Resultado da correção (apenas modelos com gabarito)
   pros: string;
   contras: string;

@@ -5,6 +5,7 @@ import Icon from './ui/Icon';
 import type { IconName } from './ui/iconNames';
 import type { Evaluation, EvaluationTemplate } from '../types';
 import { getEvaluations, getTemplates } from '../services/firebaseService';
+import { getEvaluationSubject } from '../utils/headerUtils';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Select from './ui/Select';
@@ -148,8 +149,8 @@ const GeneralDashboard: React.FC = () => {
       // Excluir formulários puros (sem averageScore) - só incluir avaliações reais
       if (evaluation.averageScore === undefined || evaluation.averageScore === null) return false;
 
-      // Testes de candidato (identificados pelo telefone) não têm filial/turno e não entram nos indicadores da frota
-      if (evaluation.telefone) return false;
+      // Testes de candidato não têm filial/turno e não entram nos indicadores da frota
+      if (getEvaluationSubject(evaluation) === 'candidate') return false;
 
       // Filtro por filial
       if (filters.filial && evaluation.filial !== filters.filial) return false;
@@ -239,11 +240,13 @@ const GeneralDashboard: React.FC = () => {
     // Performance by Branch
     const branchStats: { [key: string]: { totalScore: number; count: number } } = {};
     filteredEvaluations.forEach(evaluation => {
-      if (!branchStats[evaluation.filial]) {
-        branchStats[evaluation.filial] = { totalScore: 0, count: 0 };
+      // Cabeçalhos criados sem campo de filial gravam filial vazia
+      const filial = evaluation.filial || 'Não informada';
+      if (!branchStats[filial]) {
+        branchStats[filial] = { totalScore: 0, count: 0 };
       }
-      branchStats[evaluation.filial].totalScore += (evaluation.averageScore || 0);
-      branchStats[evaluation.filial].count++;
+      branchStats[filial].totalScore += (evaluation.averageScore || 0);
+      branchStats[filial].count++;
     });
 
     const performanceByBranch = Object.entries(branchStats).map(([branch, stats]) => ({

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Icon from './ui/Icon';
-import type { Evaluation, EvaluationCriterion, EvaluationTemplate } from '../types';
+import type { Evaluation, EvaluationCriterion, EvaluationTemplate, HeaderFieldRole } from '../types';
+import { formatHeaderValue } from '../utils/headerUtils';
 import { getEvaluations, deleteEvaluation, getTemplates } from '../services/firebaseService';
 import { PDFService, describeMissingPdfImages } from '../services/pdfService';
 import Card from './ui/Card';
@@ -18,6 +19,8 @@ const formatDate = (dateString: string) => {
   const [year, month, day] = dateString.split('-');
   return `${day}/${month}/${year}`;
 };
+
+const SUMMARY_HEADER_ROLES: HeaderFieldRole[] = ['person', 'phone', 'branch', 'date'];
 
 const FormsViewer: React.FC = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -314,6 +317,10 @@ const FormsViewer: React.FC = () => {
           const isExpanded = expandedCards.has(form.id);
           const fieldCount = form.fieldValues ? Object.keys(form.fieldValues).length : 0;
           const scoreEntries = getOrderedScores(form);
+          // Campos do cabeçalho que o resumo do cartão (pessoa, telefone, filial, data) ainda não mostra
+          const headerDetails = (form.headerSnapshot?.fields ?? []).filter(
+            field => !SUMMARY_HEADER_ROLES.includes(field.role)
+          );
           const formName = form.templateName || 'formulário';
 
           return (
@@ -411,6 +418,22 @@ const FormsViewer: React.FC = () => {
                 {/* Conteúdo expandido - campos do formulário */}
                 {isExpanded && (
                   <>
+                    {headerDetails.length > 0 && (
+                      <div className="mt-4 border-t pt-4">
+                        <h4 className="font-semibold text-gray-700 mb-3">Cabeçalho</h4>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {headerDetails.map(field => (
+                            <div key={field.id} className="min-w-0 rounded-brand bg-gray-50 p-3">
+                              <dt className="mb-1 text-xs font-medium text-gray-600 break-words">{field.label}</dt>
+                              <dd className="text-sm text-brand-dark break-words">
+                                {formatHeaderValue(field.type, field.value) || '-'}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    )}
+
                     {form.grading && (
                       <div className="mt-4 border-t pt-4">
                         <GradingDetails

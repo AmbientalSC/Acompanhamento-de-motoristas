@@ -10,6 +10,17 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          userProfile().role == 'admin' &&
+          userProfile().isActive != false
+        )
+      );
+    }
+
     function hasMn10Access() {
       return isSignedIn() && (
         request.auth.token.admin == true ||
@@ -104,6 +115,12 @@ service cloud.firestore {
 
     match /templates/{docId} {
       allow read, write: if isSignedIn();
+    }
+
+    // Cabeçalhos dos modelos: qualquer usuário logado lê (formulário de avaliação); só admin cria/edita/exclui
+    match /headers/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /evaluations/{docId} {
