@@ -50,6 +50,17 @@ const FormsViewer: React.FC = () => {
     return fieldById ? fieldById.name : fieldKey;
   };
 
+  // Notas gravadas (chave = id do critério; legado: nome) na ordem do modelo; as que sobrarem vão ao fim
+  const getOrderedScores = (form: Evaluation): [string, number][] => {
+    const entries = Object.entries(form.scores || {});
+    const criteria = templates.find(t => t.id === form.templateId)?.criteriaConfig ?? [];
+    const rank = (key: string) => {
+      const index = criteria.findIndex(c => c.id === key || c.name === key);
+      return index === -1 ? criteria.length : index;
+    };
+    return [...entries].sort(([a], [b]) => rank(a) - rank(b));
+  };
+
   // Critério de um campo de `fieldValues`: por id (dados antigos) ou por nome (dados novos).
   // Perguntas com o mesmo nome são ambíguas (as respostas colidem), então por nome só vale se for único.
   const findCriterion = (fieldKey: string, templateId?: string): EvaluationCriterion | undefined => {
@@ -302,6 +313,7 @@ const FormsViewer: React.FC = () => {
         {filteredForms.map((form) => {
           const isExpanded = expandedCards.has(form.id);
           const fieldCount = form.fieldValues ? Object.keys(form.fieldValues).length : 0;
+          const scoreEntries = getOrderedScores(form);
           const formName = form.templateName || 'formulário';
 
           return (
@@ -405,6 +417,23 @@ const FormsViewer: React.FC = () => {
                           grading={form.grading}
                           criteria={templates.find(t => t.id === form.templateId)?.criteriaConfig}
                         />
+                      </div>
+                    )}
+
+                    {/* Notas dos campos de nota (`scores` fica fora de `fieldValues`), na ordem do modelo */}
+                    {scoreEntries.length > 0 && (
+                      <div className="mt-4 border-t pt-4">
+                        <h4 className="font-semibold text-gray-700 mb-3">Notas</h4>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {scoreEntries.map(([criterionKey, score]) => (
+                            <div key={criterionKey} className="flex min-w-0 items-start justify-between gap-3 rounded-brand bg-gray-50 p-3">
+                              <dt className="min-w-0 flex-1 text-sm text-gray-700 break-words">
+                                {getFieldName(criterionKey, form.templateId)}
+                              </dt>
+                              <dd className="flex-shrink-0 text-sm font-semibold text-brand-dark">{score}</dd>
+                            </div>
+                          ))}
+                        </dl>
                       </div>
                     )}
 

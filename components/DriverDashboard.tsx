@@ -209,6 +209,8 @@ const DriverDashboard: React.FC = () => {
   }, [selectedEvaluation, templates]);
 
   const isRhEval = selectedTemplate?.headerType === 'rh';
+  // Como no PDF, o candidato é reconhecido pelo telefone (só esse cabeçalho o grava)
+  const isCandidateEval = !!selectedEvaluation?.telefone;
 
   const summaryChartData = useMemo(() => {
     if (!selectedEvaluation?.scores) return [];
@@ -459,9 +461,16 @@ const DriverDashboard: React.FC = () => {
                   <div className="mb-6 bg-gray-50 p-3 sm:p-4 rounded-lg">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Informações da Avaliação</h4>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                      <InfoItem label={isRhEval ? 'Colaborador:' : 'Motorista:'} value={selectedEvaluation.motorista} />
-                      <InfoItem label="Filial:" value={selectedEvaluation.filial} />
-                      {isRhEval ? (
+                      <InfoItem
+                        label={isRhEval ? 'Colaborador:' : isCandidateEval ? 'Candidato:' : 'Motorista:'}
+                        value={selectedEvaluation.motorista}
+                      />
+                      {isCandidateEval ? (
+                        <InfoItem label="Telefone:" value={selectedEvaluation.telefone} />
+                      ) : (
+                        <InfoItem label="Filial:" value={selectedEvaluation.filial} />
+                      )}
+                      {isCandidateEval ? null : isRhEval ? (
                         <>
                           <InfoItem label="Função:" value={selectedEvaluation.funcao || '-'} />
                           <InfoItem label="Turno Principal:" value={selectedEvaluation.turnoPrincipal || '-'} />

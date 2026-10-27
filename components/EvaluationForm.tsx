@@ -35,14 +35,18 @@ const getInitialState = (): Omit<Evaluation, 'id' | 'timestamp' | 'scores' | 'te
     telefone: '',
 });
 
-// Só os cabeçalhos de avaliação e de RH calculam média geral (candidato e formulário sem cabeçalho não)
-const hasAverageHeader = (template: EvaluationTemplate | null | undefined): boolean =>
-  template?.headerType === 'evaluation' || template?.headerType === 'rh';
-
 // Telefone com DDD no formato da máscara de `applyPhoneMask`: (48)999999999 ou (48)99999999
 const PHONE_PATTERN = '\\(\\d{2}\\)\\d{8,9}';
 
 const isRatingType = (type: string | undefined): boolean => type === 'rating' || type === 'rating-5';
+
+// Avaliação e RH sempre calculam média geral; candidato só quando o modelo tem campos de nota
+// (teste de volante sim, teste de placa não); formulário sem cabeçalho nunca.
+const hasAverageHeader = (template: EvaluationTemplate | null | undefined): boolean => {
+  if (template?.headerType === 'evaluation' || template?.headerType === 'rh') return true;
+  if (template?.headerType !== 'candidate') return false;
+  return (template.criteriaConfig ?? []).some(c => isRatingType(c.type));
+};
 
 // Campos de nota obrigatórios que ficaram sem resposta (chave = id do critério)
 const getMissingRatingErrors = (
@@ -184,7 +188,7 @@ const EvaluationForm: React.FC = () => {
   const averageScore = useMemo(() => {
     if (!selectedTemplate) return 0;
 
-    // Só cabeçalhos de avaliação e de RH têm averageScore
+    // Só modelos com média (ver `hasAverageHeader`) têm averageScore
     if (!hasAverageHeader(selectedTemplate)) return undefined;
 
     const answeredScores = Object.values(scores);
@@ -610,7 +614,11 @@ const EvaluationForm: React.FC = () => {
               <span className="text-sm sm:text-lg font-medium text-gray-600">
                 <span className="sm:hidden">Média geral:</span>
                 <span className="hidden sm:inline">
-                  {selectedTemplate?.headerType === 'rh' ? 'Média Geral do Colaborador:' : 'Média Geral do Motorista:'}
+                  {selectedTemplate?.headerType === 'rh'
+                    ? 'Média Geral do Colaborador:'
+                    : selectedTemplate?.headerType === 'candidate'
+                      ? 'Média Geral do Candidato:'
+                      : 'Média Geral do Motorista:'}
                 </span>
               </span>
               {renderAverageStatus()}

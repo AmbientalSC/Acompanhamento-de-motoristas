@@ -148,6 +148,9 @@ const GeneralDashboard: React.FC = () => {
       // Excluir formulários puros (sem averageScore) - só incluir avaliações reais
       if (evaluation.averageScore === undefined || evaluation.averageScore === null) return false;
 
+      // Testes de candidato (identificados pelo telefone) não têm filial/turno e não entram nos indicadores da frota
+      if (evaluation.telefone) return false;
+
       // Filtro por filial
       if (filters.filial && evaluation.filial !== filters.filial) return false;
 

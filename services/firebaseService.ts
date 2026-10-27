@@ -9,7 +9,8 @@ import {
   query, 
   orderBy,
   setDoc,
-  Timestamp 
+  Timestamp,
+  type DocumentData
 } from 'firebase/firestore';
 import { 
   createUserWithEmailAndPassword
@@ -151,6 +152,17 @@ export const saveEvaluation = async (evaluationData: Omit<Evaluation, 'id' | 'ti
   }
 };
 
+// Testes de candidato (com telefone) gravados antes de esse cabeçalho calcular média ficaram sem
+// `averageScore`: deriva a média das notas gravadas para que entrem na Análise por Motorista.
+const resolveAverageScore = (data: DocumentData): number | undefined => {
+  if (typeof data.averageScore === 'number') return data.averageScore;
+  if (!data.telefone) return data.averageScore ?? undefined;
+
+  const answered = Object.values(data.scores ?? {}).filter((v): v is number => typeof v === 'number');
+  if (answered.length === 0) return undefined;
+  return answered.reduce((sum, v) => sum + v, 0) / answered.length;
+};
+
 export const getEvaluations = async (): Promise<Evaluation[]> => {
   try {
     const q = query(collection(db, 'evaluations'), orderBy('timestamp', 'desc'));
@@ -175,7 +187,7 @@ export const getEvaluations = async (): Promise<Evaluation[]> => {
         templateName: data.templateName,
         scores: data.scores || {},
         fieldValues: data.fieldValues || {},
-        averageScore: data.averageScore,
+        averageScore: resolveAverageScore(data),
         ratingScale: data.ratingScale,
         nomeColaborador: data.nomeColaborador ? normalizeEvaluationName(data.nomeColaborador) : data.nomeColaborador,
         funcao: data.funcao,
