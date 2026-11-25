@@ -3,6 +3,7 @@ import type { Evaluation, EvaluationGrading, EvaluationTemplate, HeaderSubject }
 import { getEvaluationStatus } from '../utils/evaluationUtils';
 import { formatHeaderValue, getEvaluationSubject } from '../utils/headerUtils';
 import { isTrustedImageUrl } from '../utils/imageUtils';
+import { FORM_PLACEHOLDER_MARK } from '../utils/nameUtils';
 import { getTemplates } from './firebaseService';
 
 interface PdfImage {
@@ -19,8 +20,9 @@ export interface EvaluationPdfResult {
 export const describeMissingPdfImages = (count: number): string =>
   `PDF gerado, mas ${count === 1 ? '1 imagem das perguntas não pôde' : `${count} imagens das perguntas não puderam`} ser incluída${count === 1 ? '' : 's'}. Avise o TI.`;
 
-// Tipo do relatório: vem do snapshot do cabeçalho ou, nas avaliações antigas, dos dados gravados
-type ReportKind = 'driver' | 'rh' | 'candidate';
+// Tipo do relatório: vem do snapshot do cabeçalho ou, nas avaliações antigas, dos dados gravados.
+// `form` = modelo sem cabeçalho (`motorista` = "Formulário <modelo>"): não há pessoa nem campos fixos.
+type ReportKind = 'driver' | 'rh' | 'candidate' | 'form';
 
 const REPORT_KIND_BY_SUBJECT: Record<HeaderSubject, ReportKind> = {
   driver: 'driver',
@@ -28,20 +30,33 @@ const REPORT_KIND_BY_SUBJECT: Record<HeaderSubject, ReportKind> = {
   candidate: 'candidate',
 };
 
+const isHeaderlessForm = (evaluation: Evaluation): boolean =>
+  !evaluation.headerSnapshot && (evaluation.motorista ?? '').startsWith(`${FORM_PLACEHOLDER_MARK} `);
+
 const getReportKind = (evaluation: Evaluation): ReportKind =>
-  REPORT_KIND_BY_SUBJECT[getEvaluationSubject(evaluation)];
+  isHeaderlessForm(evaluation) ? 'form' : REPORT_KIND_BY_SUBJECT[getEvaluationSubject(evaluation)];
 
 const REPORT_TITLES: Record<ReportKind, string> = {
   driver: 'RELATÓRIO DE AVALIAÇÃO DE MOTORISTA',
   rh: 'RELATÓRIO DE AVALIAÇÃO DE COLABORADOR',
   candidate: 'RELATÓRIO DE TESTE DE CANDIDATO',
+  form: 'RELATÓRIO DE FORMULÁRIO',
 };
 
 const INFO_TITLES: Record<ReportKind, string> = {
   driver: 'INFORMAÇÕES DO MOTORISTA',
   rh: 'INFORMAÇÕES DO COLABORADOR',
   candidate: 'INFORMAÇÕES DO CANDIDATO',
+  form: 'INFORMAÇÕES DO FORMULÁRIO',
 };
+
+interface PdfInfoRow {
+  label: string;
+  value: string;
+}
+
+// Caracteres inválidos em nome de arquivo no Windows
+const toSafeFileName = (value: string): string => value.replace(/[\\/:*?"<>|]+/g, '').trim();
 
 // `YYYY-MM-DD` → `DD/MM/YYYY` sem passar por Date (new Date('2026-10-22') é UTC e mostraria o dia anterior no Brasil)
 const formatIsoDate = (isoDate: string): string => {
@@ -216,7 +231,11 @@ export class PDFService {
     pdf.setFont('helvetica', 'normal');
 
     const dateText = formatIsoDate(evaluation.data);
-    const infoByKind: Record<ReportKind, Array<{ label: string; value: string }>> = {
+    const infoByKind: Record<ReportKind, PdfInfoRow[]> = {
+      form: [
+        { label: 'Modelo:', value: evaluation.templateName },
+        { label: 'Data:', value: dateText }
+      ],
       candidate: [
         { label: 'Nome:', value: evaluation.motorista },
         { label: 'Telefone:', value: evaluation.telefone || '' },
@@ -405,6 +424,12 @@ export class PDFService {
       yPosition = this.drawGradingSection(pdf, evaluation.grading, images, margin, contentWidth, pageHeight, yPosition);
     }
 
+    // Respostas dos campos livres (texto, data, múltipla escolha...); as corrigidas pelo gabarito já saíram acima
+    const filledFields = this.getFilledFieldRows(evaluation, await templatePromise);
+    if (filledFields.length > 0) {
+      yPosition = this.drawFilledFieldsSection(pdf, filledFields, margin, contentWidth, pageHeight, yPosition);
+    }
+
     // Observações
     if (evaluation.pros || evaluation.contras || evaluation.consideracoes) {
       pdf.setFontSize(14);
@@ -477,10 +502,108 @@ export class PDFService {
     }
 
     // Salvar PDF
-    const fileName = `avaliacao_${evaluation.motorista}_${evaluation.data.replace(/-/g, '')}.pdf`;
+    const fileSubject = reportKind === 'form' ? evaluation.templateName : evaluation.motorista;
+    const filePrefix = reportKind === 'form' ? 'formulario' : 'avaliacao';
+    const fileName = `${filePrefix}_${toSafeFileName(fileSubject)}_${evaluation.data.replace(/-/g, '')}.pdf`;
     pdf.save(fileName);
 
     return { missingImages };
+  }
+
+  // `fieldValues` (indexado pelo nome do critério; legado: id) na ordem do modelo, com o texto exibido de cada resposta.
+  // Perguntas já listadas em "RESULTADO DO TESTE" ficam de fora para não repetir.
+  private static getFilledFieldRows(
+    evaluation: Evaluation,
+    template: EvaluationTemplate | undefined
+  ): PdfInfoRow[] {
+    const entries = Object.entries(evaluation.fieldValues || {});
+    if (entries.length === 0) return [];
+
+    const criteria = template?.criteriaConfig ?? [];
+    const findCriterion = (key: string) => {
+      const byId = criteria.find(c => c.id === key);
+      if (byId) return byId;
+      const byName = criteria.filter(c => c.name === key);
+      return byName.length === 1 ? byName[0] : undefined;
+    };
+    const rank = (key: string) => {
+      const index = criteria.findIndex(c => c.id === key || c.name === key);
+      return index === -1 ? criteria.length : index;
+    };
+    const gradedIds = new Set(evaluation.grading?.items.map(item => item.criterionId) ?? []);
+
+    return [...entries]
+      .sort(([a], [b]) => rank(a) - rank(b))
+      .flatMap(([key, value]) => {
+        const criterion = findCriterion(key);
+        if (criterion && gradedIds.has(criterion.id)) return [];
+
+        let text: string;
+        if (typeof value === 'boolean') {
+          text = value ? 'Sim' : 'Não';
+        } else {
+          const raw = value === null || value === undefined ? '' : String(value);
+          const option = criterion?.type === 'radio' ? criterion.options?.find(o => o.value === raw) : undefined;
+          text = criterion?.type === 'date' ? formatIsoDate(raw) : option?.label || raw;
+        }
+
+        return [{ label: criterion?.name ?? key, value: text.trim() || '-' }];
+      });
+  }
+
+  // Seção "DADOS PREENCHIDOS": pergunta em negrito e a resposta embaixo (respostas longas quebram linha)
+  private static drawFilledFieldsSection(
+    pdf: jsPDF,
+    rows: PdfInfoRow[],
+    margin: number,
+    contentWidth: number,
+    pageHeight: number,
+    startY: number
+  ): number {
+    let yPosition = startY;
+    const bottomLimit = pageHeight - 30;
+    const lineHeight = 5;
+
+    const ensureSpace = (needed: number) => {
+      if (yPosition + needed > bottomLimit) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+    };
+
+    ensureSpace(25);
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('DADOS PREENCHIDOS', margin, yPosition);
+    yPosition += 10;
+
+    pdf.setFontSize(11);
+    rows.forEach(row => {
+      pdf.setFont('helvetica', 'bold');
+      const labelLines: string[] = pdf.splitTextToSize(row.label, contentWidth);
+      pdf.setFont('helvetica', 'normal');
+      const valueLines: string[] = pdf.splitTextToSize(row.value, contentWidth - 3);
+
+      // Rótulo e início da resposta ficam juntos; respostas muito longas continuam na página seguinte
+      ensureSpace((labelLines.length + Math.min(valueLines.length, 3)) * lineHeight);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(labelLines, margin, yPosition);
+      yPosition += labelLines.length * lineHeight;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(60, 60, 60);
+      valueLines.forEach(line => {
+        ensureSpace(lineHeight);
+        pdf.text(line, margin + 3, yPosition);
+        yPosition += lineHeight;
+      });
+      yPosition += 3;
+    });
+
+    pdf.setTextColor(0, 0, 0);
+    return yPosition + 7;
   }
 
   static async generateDriverAnalysisPDF(evaluations: Evaluation[]): Promise<void> {
